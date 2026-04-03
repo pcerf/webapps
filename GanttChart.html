@@ -219,6 +219,57 @@
       <div class="zoom-group">
         <label>Labels</label>
         <button class="zbtn" onclick="toggleLabels()" id="labelBtn" title="Toggle label position" style="width:auto;padding:0 7px;font-size:10px">Side</button>
+        <input type="range" id="fontSizeSlider" min="0.5" max="2" step="0.1" value="1" oninput="changeFontScale(this.value)" title="Label font size" style="width:50px;height:14px;accent-color:var(--accent);cursor:pointer">
+      </div>
+      <div class="zoom-div"></div>
+      <div class="zoom-group">
+        <label>Arrows</label>
+        <input type="range" id="arrowWidthSlider" min="0.5" max="4" step="0.25" value="1.3" oninput="changeArrowWidth(this.value)" title="Arrow thickness" style="width:50px;height:14px;accent-color:var(--accent);cursor:pointer">
+        <input type="range" id="arrowCurveSlider" min="0" max="1" step="0.05" value="0.35" oninput="changeArrowCurve(this.value)" title="Arrow curviness" style="width:50px;height:14px;accent-color:var(--accent);cursor:pointer">
+        <select class="palette-select" id="arrowColorSelect" onchange="changeArrowColor()" style="min-width:58px">
+          <optgroup label="Neutral">
+            <option value="gray">Gray</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </optgroup>
+          <optgroup label="Blue">
+            <option value="blue">Blue</option>
+            <option value="navy">Navy</option>
+            <option value="sky">Sky</option>
+          </optgroup>
+          <optgroup label="Red">
+            <option value="red">Red</option>
+            <option value="rose">Rose</option>
+            <option value="crimson">Crimson</option>
+          </optgroup>
+          <optgroup label="Green">
+            <option value="green">Green</option>
+            <option value="emerald">Emerald</option>
+            <option value="lime">Lime</option>
+          </optgroup>
+          <optgroup label="Warm">
+            <option value="orange">Orange</option>
+            <option value="amber">Amber</option>
+            <option value="coral">Coral</option>
+          </optgroup>
+          <optgroup label="Purple">
+            <option value="purple">Purple</option>
+            <option value="indigo">Indigo</option>
+            <option value="violet">Violet</option>
+          </optgroup>
+          <optgroup label="Cool">
+            <option value="teal">Teal</option>
+            <option value="cyan">Cyan</option>
+          </optgroup>
+          <optgroup label="Earth">
+            <option value="brown">Brown</option>
+            <option value="bronze">Bronze</option>
+            <option value="sand">Sand</option>
+          </optgroup>
+        </select>
+        <label style="font-size:10.5px;color:#6b7280;display:flex;align-items:center;gap:3px;cursor:pointer" title="Orthogonal arrows (horizontal/vertical only)">
+          <input type="checkbox" id="arrowOrtho" onchange="toggleArrowOrtho()" style="cursor:pointer;margin:0">Ortho
+        </label>
       </div>
       <div class="zoom-div"></div>
       <div class="palette-selector">
@@ -278,7 +329,17 @@ function updatePaletteDots() {
 // ============================== STATE ==============================
 const BASE_ROW_H = 44, BASE_BAR_H = 26, HDR_H = 38, LABEL_W = 210, MIN_COL_W = 44, GRP_BAR_H = 10;
 const PAD = { t: 6, r: 28, b: 16, l: 14 };
-const st = { zoomH: 1, zoomV: 1, collapsedGroups: new Set(), hiddenTasks: new Set(), drag: null, labelsOnBars: false };
+const ARROW_COLORS = {
+  gray:    '#9ca3af', dark:    '#4b5563', light:   '#d1d5db',
+  blue:    '#3b82f6', navy:    '#1e3a8a', sky:     '#38bdf8',
+  red:     '#ef4444', rose:    '#f43f5e', crimson: '#be123c',
+  green:   '#22c55e', emerald: '#059669', lime:    '#84cc16',
+  orange:  '#f59e0b', amber:   '#d97706', coral:   '#fb7185',
+  purple:  '#8b5cf6', indigo:  '#6366f1', violet:  '#a78bfa',
+  teal:    '#14b8a6', cyan:    '#06b6d4',
+  brown:   '#92400e', bronze:  '#a16207', sand:    '#b0956e'
+};
+const st = { zoomH: 1, zoomV: 1, collapsedGroups: new Set(), hiddenTasks: new Set(), drag: null, labelsOnBars: false, fontScale: 1, arrowWidth: 1.3, arrowColor: 'gray', arrowCurve: 0.35, arrowOrtho: false };
 let lastParsed = null;
 
 // ============================== PARSER ==============================
@@ -387,7 +448,7 @@ function renderChart(data) {
   const svg = document.getElementById('gantt-svg');
   svg.innerHTML = '';
 
-  const zH = st.zoomH, zV = st.zoomV;
+  const zH = st.zoomH, zV = st.zoomV, fs = st.fontScale;
   const ROW_H = BASE_ROW_H * zV, BAR_H = BASE_BAR_H * zV;
   const LW = st.labelsOnBars ? 26 : LABEL_W; // dynamic label column width
   const minT = Math.min(...data.allTasks.map(t=>t.start));
@@ -405,8 +466,11 @@ function renderChart(data) {
 
   // Defs
   const defs = el('defs');
+  const ac = ARROW_COLORS[st.arrowColor] || ARROW_COLORS.gray;
   defs.innerHTML = `<marker id="ah" markerWidth="8" markerHeight="6" refX="7.5" refY="3" orient="auto" markerUnits="strokeWidth">
-    <path d="M0,0.5 L7,3 L0,5.5" fill="none" stroke="#6b7280" stroke-width="1.2" stroke-linejoin="round"/></marker>
+    <path d="M0,0.5 L7,3 L0,5.5" fill="none" stroke="${ac}" stroke-width="1.2" stroke-linejoin="round"/></marker>
+    <marker id="ad" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto" markerUnits="strokeWidth">
+    <circle cx="3" cy="3" r="2" fill="${ac}"/></marker>
     <filter id="bs" x="-4%" y="-10%" width="108%" height="130%"><feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-opacity="0.08"/></filter>`;
   svg.insertBefore(defs, root);
 
@@ -434,7 +498,7 @@ function renderChart(data) {
       stroke:c===0?'#d1d5db':'#ebedf0','stroke-width':c===0?1:0.7}));
     if (c<cols) {
       const t = el('text',{x:x+colW/2,y:HDR_H-10,'text-anchor':'middle',
-        'font-size':Math.min(11.5,colW*0.26),fill:'#6b7280','font-family':"system-ui,sans-serif"});
+        'font-size':Math.min(11.5,colW*0.26)*fs,fill:'#6b7280','font-family':"system-ui,sans-serif"});
       t.textContent = prefix+(minT+c); root.appendChild(t);
     }
   }
@@ -457,7 +521,7 @@ function renderChart(data) {
     // Side labels (only in side mode)
     if (!st.labelsOnBars && !r.shared) {
       const lb = el('text',{x:LW-24,y:y+ROW_H/2+1,'text-anchor':'end','dominant-baseline':'middle',
-        'font-size':Math.max(9,13*Math.min(1,zV)),fill:'#374151','font-family':"system-ui,sans-serif"});
+        'font-size':Math.max(9,13*Math.min(1,zV))*fs,fill:'#374151','font-family':"system-ui,sans-serif"});
       lb.textContent = task.name; rowG.appendChild(lb);
     }
     // Hide button (side mode: left gutter; bar mode: skip, use tooltip/hover)
@@ -477,7 +541,7 @@ function renderChart(data) {
       // On-bar label for milestones: show to the right of diamond
       if (st.labelsOnBars) {
         const ml = el('text',{x:cx+sz+6, y:cy+1, 'dominant-baseline':'middle',
-          'font-size':Math.max(9,11*Math.min(1,zV)), class:'bar-label-dark'});
+          'font-size':Math.max(9,11*Math.min(1,zV))*fs, class:'bar-label-dark'});
         ml.textContent = task.name; rowG.appendChild(ml);
       }
     } else {
@@ -495,7 +559,7 @@ function renderChart(data) {
 
       // On-bar label
       if (st.labelsOnBars) {
-        const fontSize = Math.max(9, Math.min(12, BAR_H * 0.45, 11) * Math.min(1, zV));
+        const fontSize = Math.max(9, Math.min(12, BAR_H * 0.45, 11) * Math.min(1, zV)) * fs;
         const textFits = barW > 50;
         const bl = el('text',{
           x: textFits ? barX + 7 : barX + barW + 6,
@@ -527,22 +591,39 @@ function renderChart(data) {
       if (si===undefined) return;
       const src = data.allTasks[si];
       if (src._cy===undefined) return;
-      // Source X: fromOff is relative to source WP start; default = end of source bar
+      const halfH = BAR_H/2;
+      // Source: offset → top/bottom edge; default → left/right edge at center
       const sx = dep.fromOff!==null ? LW+(src.start+dep.fromOff-minT)*colW : (src._bx+src._bw);
-      const sy=src._cy;
-      // Target X: toOff is relative to target WP start; default = start of target bar
+      const sy = dep.fromOff!==null ? (task._cy > src._cy ? src._cy+halfH : src._cy-halfH) : src._cy;
+      // Target: offset → top/bottom edge; default → left/right edge at center
       const tx = dep.toOff!==null ? LW+(task.start+dep.toOff-minT)*colW : task._bx;
-      const ty=task._cy;
+      const ty = dep.toOff!==null ? (src._cy > task._cy ? task._cy+halfH : task._cy-halfH) : task._cy;
       if (tx===undefined) return;
-      const dx=Math.abs(tx-sx); let path;
-      if (tx > sx+4) {
-        const cp=Math.max(14,dx*0.35);
+      const dx=Math.abs(tx-sx), cv=st.arrowCurve; let path;
+      if (st.arrowOrtho) {
+        const r = Math.min(8, Math.abs(ty-sy)/2, dx/2); // corner radius
+        if (Math.abs(sy-ty)<1) {
+          path=`M${sx},${sy} L${tx},${ty}`;
+        } else if (tx > sx+4) {
+          const mx=(sx+tx)/2;
+          const dy=ty>sy?1:-1;
+          path=`M${sx},${sy} L${mx-r},${sy} Q${mx},${sy} ${mx},${sy+dy*r} L${mx},${ty-dy*r} Q${mx},${ty} ${mx+r},${ty} L${tx},${ty}`;
+        } else {
+          const o=12, mx=Math.max(sx+o,tx+o);
+          const my=sy+(ty-sy)/2;
+          const dy=ty>sy?1:-1;
+          path=`M${sx},${sy} L${mx-r},${sy} Q${mx},${sy} ${mx},${sy+dy*r} L${mx},${my-dy*r} Q${mx},${my} ${mx-r},${my} L${Math.min(sx,tx)-o+r},${my} Q${Math.min(sx,tx)-o},${my} ${Math.min(sx,tx)-o},${my+dy*r} L${Math.min(sx,tx)-o},${ty-dy*r} Q${Math.min(sx,tx)-o},${ty} ${Math.min(sx,tx)-o+r},${ty} L${tx},${ty}`;
+        }
+      } else if (cv===0) {
+        path=`M${sx},${sy} L${tx},${ty}`;
+      } else if (tx > sx+4) {
+        const cp=Math.max(14,dx*cv);
         path=`M${sx},${sy} C${sx+cp},${sy} ${tx-cp},${ty} ${tx},${ty}`;
       } else {
-        const o=14, m=sy+(ty-sy)/2;
-        path=`M${sx},${sy} L${sx+o},${sy} C${sx+o+12},${sy} ${sx+o+12},${m} ${(sx+tx)/2},${m} S${tx-o-12},${ty} ${tx-o},${ty} L${tx},${ty}`;
+        const o=14*cv/0.35, m=sy+(ty-sy)/2, bulge=12*cv/0.35;
+        path=`M${sx},${sy} L${sx+o},${sy} C${sx+o+bulge},${sy} ${sx+o+bulge},${m} ${(sx+tx)/2},${m} S${tx-o-bulge},${ty} ${tx-o},${ty} L${tx},${ty}`;
       }
-      arrowG.appendChild(el('path',{d:path,fill:'none',stroke:'#9ca3af','stroke-width':1.3,'marker-end':'url(#ah)'}));
+      arrowG.appendChild(el('path',{d:path,fill:'none',stroke:ac,'stroke-width':st.arrowWidth,'marker-start':'url(#ad)','marker-end':'url(#ah)'}));
     });
   });
   root.appendChild(arrowG);
@@ -557,11 +638,12 @@ function renderGrpHdr(root, r, y, ROW_H, colW, minT, LW) {
   // Background
   gg.appendChild(el('rect',{x:0,y,width:LW+1000*colW,height:ROW_H,fill:'#f1f2f4',opacity:0.6}));
   // Chevron
-  const ch = el('text',{x:10,y:y+ROW_H/2+1,'dominant-baseline':'middle','font-size':'11',fill:'#6b7280'});
+  const labelY = st.labelsOnBars ? y+ROW_H*0.32 : y+ROW_H/2+1;
+  const ch = el('text',{x:10,y:labelY,'dominant-baseline':'middle','font-size':11*st.fontScale,fill:'#6b7280'});
   ch.textContent = r.collapsed?'▶':'▾'; gg.appendChild(ch);
   // Name
-  const lb = el('text',{x:26,y:y+ROW_H/2+1,'dominant-baseline':'middle',
-    'font-size':'12',fill:'#374151','font-weight':'600','font-family':"system-ui,sans-serif"});
+  const lb = el('text',{x:26,y:labelY,'dominant-baseline':'middle',
+    'font-size':12*st.fontScale,fill:'#374151','font-weight':'600','font-family':"system-ui,sans-serif"});
   lb.textContent = r.name; gg.appendChild(lb);
   // Bar
   if (isFinite(r.start)&&isFinite(r.end)) {
@@ -677,6 +759,13 @@ function toggleLabels() {
   document.getElementById('labelBtn').textContent = st.labelsOnBars ? 'Bar' : 'Side';
   render(true);
 }
+function changeFontScale(v) { st.fontScale = parseFloat(v); render(true); }
+
+// ============================== ARROWS ==============================
+function changeArrowWidth(v) { st.arrowWidth = parseFloat(v); render(true); }
+function changeArrowCurve(v) { st.arrowCurve = parseFloat(v); render(true); }
+function changeArrowColor() { st.arrowColor = document.getElementById('arrowColorSelect').value; render(true); }
+function toggleArrowOrtho() { st.arrowOrtho = document.getElementById('arrowOrtho').checked; render(true); }
 
 // ============================== HIDDEN ==============================
 function updateHiddenBadge() {
@@ -699,19 +788,23 @@ function getPrefix(u) {
 }
 
 // ============================== EXPORT ==============================
-function exportSVG() {
+const SVG_EXPORT_STYLES = `.bar-label { fill: #fff; font-family: system-ui, sans-serif; font-weight: 500; paint-order: stroke fill; stroke: rgba(0,0,0,0.35); stroke-width: 2.5px; stroke-linejoin: round; }
+.bar-label-dark { fill: #374151; font-family: system-ui, sans-serif; font-weight: 500; }`;
+function prepExportSvg() {
   const svg=document.getElementById('gantt-svg'),c=svg.cloneNode(true);
+  c.setAttribute('xmlns','http://www.w3.org/2000/svg');
   const s=document.createElementNS('http://www.w3.org/2000/svg','style');
-  s.textContent=``;
-  c.insertBefore(s,c.firstChild); c.setAttribute('xmlns','http://www.w3.org/2000/svg');
-  // Remove interactive elements
+  s.textContent=SVG_EXPORT_STYLES;
+  c.insertBefore(s,c.firstChild);
   c.querySelectorAll('.bar-edge,.row-hide-btn').forEach(e=>e.remove());
+  return c;
+}
+function exportSVG() {
+  const c=prepExportSvg();
   download(new Blob([new XMLSerializer().serializeToString(c)],{type:'image/svg+xml'}),'gantt-chart.svg');
 }
 function exportPNG() {
-  const svg=document.getElementById('gantt-svg'),c=svg.cloneNode(true);
-  c.setAttribute('xmlns','http://www.w3.org/2000/svg');
-  c.querySelectorAll('.bar-edge,.row-hide-btn').forEach(e=>e.remove());
+  const c=prepExportSvg();
   const d=new XMLSerializer().serializeToString(c), img=new Image(), sc=3;
   img.onload=()=>{
     const cv=document.createElement('canvas');cv.width=img.width*sc;cv.height=img.height*sc;
@@ -722,9 +815,7 @@ function exportPNG() {
   img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(d)));
 }
 function exportHTML() {
-  const svg=document.getElementById('gantt-svg'),c=svg.cloneNode(true);
-  c.setAttribute('xmlns','http://www.w3.org/2000/svg');
-  c.querySelectorAll('.bar-edge,.row-hide-btn').forEach(e=>e.remove());
+  const c=prepExportSvg();
   const svgStr=new XMLSerializer().serializeToString(c);
   const title=document.getElementById('chartTitle').textContent;
   const data=lastParsed,prefix=getPrefix(data.unit);
