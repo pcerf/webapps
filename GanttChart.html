@@ -191,6 +191,7 @@
     <button class="btn btn-primary" onclick="exportSVG()">SVG</button>
     <button class="btn btn-primary" onclick="exportPNG()">PNG</button>
     <button class="btn btn-primary" onclick="exportHTML()">HTML</button>
+    <button class="btn btn-primary" onclick="exportMD()">MD</button>
     <span style="flex:1"></span>
     <button class="btn btn-ghost" id="refToggle" onclick="toggleRef()">Format ▴</button>
     <button class="btn btn-ghost" onclick="loadExample()">Example</button>
@@ -798,6 +799,10 @@ function prepExportSvg() {
   c.insertBefore(s,c.firstChild);
   c.querySelectorAll('.bar-edge,.row-hide-btn').forEach(e=>e.remove());
   return c;
+}
+function exportMD() {
+  const text=document.getElementById('input').value;
+  download(new Blob([text],{type:'text/markdown'}),'gantt-chart.md');
 }
 function exportSVG() {
   const c=prepExportSvg();
