@@ -28,7 +28,17 @@
   }
   .editor-header h1 { font-family: Georgia, serif; font-size: 24px; font-weight: 400; color: #f0f0f0; }
   .editor-header p { font-size: 11.5px; color: #8b949e; margin-top: 3px; font-weight: 300; }
-  .editor-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .editor-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+  .md-copy-btn {
+    position: absolute; top: 6px; right: 6px; z-index: 5;
+    background: rgba(55,65,81,0.7); border: 1px solid #4b5563; border-radius: 5px;
+    color: #9ca3af; font-size: 11px; padding: 3px 8px; cursor: pointer;
+    font-family: system-ui, sans-serif; display: flex; align-items: center; gap: 4px;
+    transition: all 0.15s; opacity: 0; pointer-events: none;
+  }
+  .editor-body:hover .md-copy-btn { opacity: 1; pointer-events: auto; }
+  .md-copy-btn:hover { background: rgba(75,85,99,0.9); color: #d1d5db; border-color: #6b7280; }
+  .md-copy-btn.copied { background: rgba(6,78,59,0.8); color: #6ee7b7; border-color: #34d399; }
   textarea#input {
     flex: 1; width: 100%; padding: 14px 18px;
     background: transparent; border: none; outline: none;
@@ -153,6 +163,10 @@
     <p>Define work packages · Chart updates live · Drag bars to edit</p>
   </div>
   <div class="editor-body">
+    <button class="md-copy-btn" id="mdCopyBtn" onclick="copyMDToClipboard()" title="Copy MD to clipboard">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 009.5 2h-6A1.5 1.5 0 002 3.5v6A1.5 1.5 0 003.5 11H5"/></svg>
+      <span id="mdCopyLabel">Copy MD</span>
+    </button>
     <textarea id="input" spellcheck="false"></textarea>
     <div class="ref-panel" id="refPanel">
       <div class="ref-content">
@@ -195,7 +209,7 @@
     <button class="btn btn-primary" onclick="exportPNG()">PNG</button>
     <button class="btn btn-primary" onclick="exportHTML()">HTML</button>
     <button class="btn btn-primary" onclick="exportMD()">MD</button>
-    <span style="flex:1"></span>
+    <button class="btn btn-ghost" id="screenshotBtn" onclick="copyChartToClipboard()" title="Copy chart to clipboard" style="padding:4px 8px;font-size:11px">📋</button>
     <button class="btn btn-ghost" id="refToggle" onclick="toggleRef()">Format ▴</button>
   </div>
 </aside>
@@ -573,15 +587,21 @@ function renderChart(data) {
       // On-bar label
       if (st.labelsOnBars) {
         const fontSize = Math.max(9, Math.min(12, BAR_H * 0.45, 11) * Math.min(1, zV)) * fs;
-        const textFits = barW > 50;
+        // Measure text to decide inside vs outside
         const bl = el('text',{
-          x: textFits ? barX + 7 : barX + barW + 6,
+          x: barX + 7,
           y: barY + BAR_H/2 + 1,
           'dominant-baseline':'middle',
           'font-size': fontSize,
-          class: textFits ? 'bar-label' : 'bar-label-dark'
+          class: 'bar-label'
         });
         bl.textContent = task.name;
+        root.appendChild(bl);
+        const textW = bl.getBBox().width;
+        root.removeChild(bl);
+        const textFits = textW + 14 <= barW;
+        bl.setAttribute('x', textFits ? barX + 7 : barX + barW + 6);
+        bl.setAttribute('class', textFits ? 'bar-label' : 'bar-label-dark');
         // Clip to bar if inside
         if (textFits) {
           const clipId = 'cl' + fi;
@@ -932,6 +952,17 @@ function getPrefix(u) {
   if(u.startsWith('sem'))return'Sem'; return'';
 }
 
+function copyMDToClipboard() {
+  const btn=document.getElementById('mdCopyBtn'), lbl=document.getElementById('mdCopyLabel');
+  const text=document.getElementById('input').value;
+  navigator.clipboard.writeText(text).then(()=>{
+    btn.classList.add('copied'); lbl.textContent='Copied!';
+    setTimeout(()=>{ btn.classList.remove('copied'); lbl.textContent='Copy MD'; },1500);
+  }).catch(()=>{
+    lbl.textContent='Failed'; setTimeout(()=>lbl.textContent='Copy MD',1500);
+  });
+}
+
 // ============================== EXPORT ==============================
 const SVG_EXPORT_STYLES = `.bar-label { fill: #fff; font-family: system-ui, sans-serif; font-weight: 500; paint-order: stroke fill; stroke: rgba(0,0,0,0.35); stroke-width: 2.5px; stroke-linejoin: round; }
 .bar-label-dark { fill: #374151; font-family: system-ui, sans-serif; font-weight: 500; }`;
@@ -947,6 +978,26 @@ function prepExportSvg() {
 function exportMD() {
   const text=document.getElementById('input').value;
   download(new Blob([text],{type:'text/markdown'}),'gantt-chart.md');
+}
+function copyChartToClipboard() {
+  const btn=document.getElementById('screenshotBtn'), orig=btn.textContent;
+  const c=prepExportSvg();
+  const d=new XMLSerializer().serializeToString(c), img=new Image(), sc=3;
+  img.onload=()=>{
+    const cv=document.createElement('canvas');cv.width=img.width*sc;cv.height=img.height*sc;
+    const ctx=cv.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.scale(sc,sc);ctx.drawImage(img,0,0);
+    cv.toBlob(b=>{
+      navigator.clipboard.write([new ClipboardItem({'image/png':b})]).then(()=>{
+        btn.textContent='✓';
+        setTimeout(()=>btn.textContent=orig,1500);
+      }).catch(()=>{
+        btn.textContent='✗';
+        setTimeout(()=>btn.textContent=orig,1500);
+      });
+    },'image/png');
+  };
+  img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(d)));
 }
 function exportSVG() {
   const c=prepExportSvg();
