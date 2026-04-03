@@ -1,11 +1,13 @@
 # Webapps
 
-A collection of single-file web applications designed to run in your browser.
+A collection of single-file web applications designed to run in your browser. Just click the links below to use the App directly in your browser.
 
 ## Apps
 
-- [GanttChart.html](GanttChart.html) — Interactive Gantt chart timeline builder with live editing, drag-to-resize, dependency arrows, and SVG/PNG/HTML export.
-- *Coming soon*: [DocScan.html](DocScan.html) — Mobile-friendly document scanner that captures pages via camera, applies perspective correction, and exports to PDF with optional OCR.
+Just click the links below to use the App directly in your browser.
+
+- [GanttChart.html](https://pcerf.github.io/webapps/GanttChart.html) — Interactive Gantt chart timeline builder with live editing, drag-to-resize, dependency arrows, and SVG/PNG/HTML export.
+- *Coming soon*: [DocScan.html](https://pcerf.github.io/webapps/DocScan.html) — Mobile-friendly document scanner that captures pages via camera, applies perspective correction, and exports to PDF with optional OCR.
 
 ## Privacy and Security
 
