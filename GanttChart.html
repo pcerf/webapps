@@ -230,6 +230,13 @@
           <option value="earth">Earth Tones</option>
           <option value="institutional">Institutional</option>
           <option value="pastel">Soft Pastel</option>
+          <option value="gray">Gray</option>
+          <option value="sunset">Sunset</option>
+          <option value="ocean">Ocean</option>
+          <option value="forest">Forest</option>
+          <option value="berry">Berry</option>
+          <option value="warm">Warm</option>
+          <option value="slate">Slate</option>
         </select>
         <div class="palette-dots" id="paletteDots"></div>
       </div>
@@ -251,7 +258,14 @@ const PALETTES = {
   teal:          ['#134E4A','#1A6B64','#22877E','#2DA399','#45B5AC','#65C5BD','#185C56','#267A73','#39968E','#50ADA5','#174F4B','#308A83'],
   earth:         ['#8B6F4E','#A67C5A','#6B7F4E','#B8926A','#7A6858','#9B8B60','#6E7E6A','#C09E76','#786050','#8A7D5E','#5E7354','#A38E6C'],
   institutional: ['#1E3A5F','#7A2E2E','#2E5E3E','#5C4A1E','#4A3060','#1E4E5A','#6E3030','#2A4E2A','#5A4020','#3E2A5A','#1A5E6E','#8A3838'],
-  pastel:        ['#7EA8CB','#A3C4A0','#C4A0B5','#B8C4A0','#D4B896','#9AB8B0','#B0A896','#8CAAB8','#A0B89A','#C0A898','#94A8B8','#A8B8A0']
+  pastel:        ['#7EA8CB','#A3C4A0','#C4A0B5','#B8C4A0','#D4B896','#9AB8B0','#B0A896','#8CAAB8','#A0B89A','#C0A898','#94A8B8','#A8B8A0'],
+  gray:          ['#6B7280','#4B5563','#9CA3AF','#374151','#7C8392','#5C6370','#8B919E','#525B6A','#A0A5AE','#6E7581','#444D5C','#848B96'],
+  sunset:        ['#E8654A','#F2994A','#F2C94C','#EB5757','#D4813F','#E07C4A','#C95A3C','#D99A4E','#E8B44C','#D06B4A','#C4782E','#E09040'],
+  ocean:         ['#0077B6','#00B4D8','#0096C7','#48CAE4','#023E8A','#0088A8','#006DA0','#2BB8D4','#015F8C','#38BCD8','#004E78','#1CA8C8'],
+  forest:        ['#2D6A4F','#40916C','#52B788','#74C69D','#1B4332','#37805E','#4AA87C','#66BD8E','#245740','#3D9468','#58B084','#7CCA9E'],
+  berry:         ['#7B2D8E','#C2185B','#9C27B0','#E91E63','#6A1B78','#AD1457','#8E24AA','#D81B60','#5E1570','#BA1C5C','#7C20A0','#E01A5E'],
+  warm:          ['#D84315','#BF360C','#E65100','#F57C00','#C33E14','#A83208','#D45A00','#E89000','#B03510','#CC4A0E','#E06800','#F08C10'],
+  slate:         ['#475569','#64748B','#334155','#94A3B8','#546478','#3E5068','#5A6F85','#7E8FA2','#445566','#6B7D90','#384A5C','#8898A8']
 };
 let currentPalette = 'academic';
 function getColors() { return PALETTES[currentPalette]; }
@@ -755,6 +769,7 @@ function toggleRef(){
 
 // ============================== EXAMPLE ==============================
 function loadExample(){
+  if (document.getElementById('input').value.trim() && !confirm('This will overwrite your current chart. Continue?')) return;
   document.getElementById('input').value=`title: Hybrid ML Framework
 unit: quarters
 
