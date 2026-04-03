@@ -175,6 +175,9 @@
         <code>deps: Task A!</code> — silent (no arrow)<br><br>
         <strong>Row sharing</strong> (same visual row):<br>
         <code>- Review | 5-5 | row: Data Collection</code><br><br>
+        <strong>Shorthand ID</strong> (for use in deps/row):<br>
+        <code>- Name | 1-4 | id: AB</code><br>
+        <code>- Other | 5-6 | deps: AB</code><br><br>
         <strong>Custom color:</strong><br>
         <code>- Name | 1-4 | color: #e05252</code><br><br>
         <strong>Milestones:</strong> start = end → diamond<br>
@@ -296,14 +299,15 @@ function parseTask(line, li, errors, ci) {
   const rng = parts[1].match(/^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)$/);
   if (!rng) { errors.push(`L${li+1}: bad range`); return null; }
   const s = parseFloat(rng[1]), e = parseFloat(rng[2]);
-  let deps=[], color=null, rowRef=null;
+  let deps=[], color=null, rowRef=null, id=null;
   for (let i=2;i<parts.length;i++) {
     const p = parts[i];
     if (/^deps?\s*:/i.test(p)) deps = parseDeps(p.replace(/^deps?\s*:\s*/i,''));
     else if (/^colou?r\s*:/i.test(p)) color = p.replace(/^colou?r\s*:\s*/i,'').trim();
     else if (/^row\s*:/i.test(p)) rowRef = p.replace(/^row\s*:\s*/i,'').trim();
+    else if (/^id\s*:/i.test(p)) id = p.replace(/^id\s*:\s*/i,'').trim();
   }
-  return { name, start:s, end:e, deps, color, rowRef, lineIdx:li, milestone:s===e, ci, gIdx:0 };
+  return { name, id, start:s, end:e, deps, color, rowRef, lineIdx:li, milestone:s===e, ci, gIdx:0 };
 }
 function parseDeps(s) {
   if (!s.trim()) return [];
@@ -336,12 +340,13 @@ function computeLayout(data) {
     if (collapsed) return;
     g.tasks.forEach(t => {
       if (st.hiddenTasks.has(t.name.toLowerCase())) return;
-      if (t.rowRef && nameToRow[t.rowRef.toLowerCase()] !== undefined) {
+      if (t.rowRef && (nameToRow[t.rowRef.toLowerCase()] !== undefined)) {
         t._vr = nameToRow[t.rowRef.toLowerCase()];
         rows.push({ type:'task', task:t, vr:t._vr, shared:true });
       } else {
         t._vr = row;
         nameToRow[t.name.toLowerCase()] = row;
+        if (t.id) nameToRow[t.id.toLowerCase()] = row;
         rows.push({ type:'task', task:t, vr:row, shared:false });
         row++;
       }
@@ -394,7 +399,7 @@ function renderChart(data) {
   const prefix = getPrefix(data.unit);
   const colors = getColors();
   const taskMap = {};
-  data.allTasks.forEach((t,i) => { taskMap[t.name.toLowerCase()]=i; });
+  data.allTasks.forEach((t,i) => { taskMap[t.name.toLowerCase()]=i; if(t.id) taskMap[t.id.toLowerCase()]=i; });
 
   // Clear positions
   data.allTasks.forEach(t => { t._bx=undefined; t._bw=undefined; t._cy=undefined; });
@@ -754,24 +759,24 @@ function loadExample(){
 unit: quarters
 
 # Phase 1 — Foundation
-- Literature Survey | 1-3
-- Benchmark Setup | 2-4 | deps: Literature Survey@1
-- Baseline Models | 3-5 | deps: Benchmark Setup
+- Literature Survey | 1-3 | id: LS
+- Benchmark Setup | 2-4 | id: BS | deps: LS@1
+- Baseline Models | 3-5 | id: BM | deps: BS
 
 # Phase 2 — Core Research
-- Architecture Design | 4-7 | deps: Literature Survey, Baseline Models
-- Training Pipeline | 5-8 | deps: Architecture Design@1
-- Ablation Studies | 7-10 | deps: Training Pipeline
+- Architecture Design | 4-7 | id: AD | deps: LS, BM
+- Training Pipeline | 5-8 | id: TP | deps: AD@1
+- Ablation Studies | 7-10 | id: AS | deps: TP
 
 # Phase 3 — Evaluation
-- Robustness Eval | 9-11 | deps: Ablation Studies@3
-- Domain Transfer | 9-11 | deps: Ablation Studies>1
-- Review Gate | 11-11 | row: Domain Transfer | deps: Robustness Eval, Domain Transfer
+- Robustness Eval | 9-11 | id: RE | deps: AS@3
+- Domain Transfer | 9-11 | id: DT | deps: AS>1
+- Review Gate | 11-11 | row: DT | deps: RE, DT
 
 # Phase 4 — Dissemination
-- Journal Paper | 10-12 | deps: Robustness Eval!
-- Conference Talk | 11-12 | deps: Journal Paper
-- Open-Source Release | 11-12 | deps: Training Pipeline!`;
+- Journal Paper | 10-12 | id: JP | deps: RE!
+- Conference Talk | 11-12 | deps: JP
+- Open-Source Release | 11-12 | deps: TP!`;
   st.collapsedGroups.clear(); st.hiddenTasks.clear(); render();
 }
 
