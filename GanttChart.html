@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Grant Gantt — Timeline Builder</title>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg-editor: #111827; --bg-editor-header: #1a2235;
@@ -14,7 +13,7 @@
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; }
-  body { font-family: 'Outfit', system-ui, sans-serif; background: var(--bg-chart); color: var(--text-chart); display: flex; }
+  body { font-family: system-ui, sans-serif; background: var(--bg-chart); color: var(--text-chart); display: flex; }
 
   .editor-panel {
     width: 400px; min-width: 320px; max-width: 520px;
@@ -27,13 +26,13 @@
     padding: 20px 20px 10px; background: var(--bg-editor-header);
     border-bottom: 1px solid var(--border);
   }
-  .editor-header h1 { font-family: 'Instrument Serif', Georgia, serif; font-size: 24px; font-weight: 400; color: #f0f0f0; }
+  .editor-header h1 { font-family: Georgia, serif; font-size: 24px; font-weight: 400; color: #f0f0f0; }
   .editor-header p { font-size: 11.5px; color: #8b949e; margin-top: 3px; font-weight: 300; }
   .editor-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
   textarea#input {
     flex: 1; width: 100%; padding: 14px 18px;
     background: transparent; border: none; outline: none;
-    color: #d1d5db; font-family: 'JetBrains Mono', monospace;
+    color: #d1d5db; font-family: monospace;
     font-size: 12.5px; line-height: 1.7; resize: none; tab-size: 2;
   }
   .ref-panel {
@@ -43,7 +42,7 @@
   .ref-panel.open { max-height: 45vh; overflow-y: auto; }
   .ref-content {
     padding: 14px 18px; font-size: 12px; line-height: 1.7;
-    font-family: 'JetBrains Mono', monospace; color: #9ca3af;
+    font-family: monospace; color: #9ca3af;
   }
   .ref-content strong { color: #d1d5db; font-weight: 500; }
   .ref-content code { background: #1f2937; padding: 1px 5px; border-radius: 3px; color: #93c5fd; }
@@ -53,7 +52,7 @@
   }
   .btn {
     padding: 6px 12px; border-radius: 5px; border: none;
-    font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 500;
+    font-family: system-ui, sans-serif; font-size: 12px; font-weight: 500;
     cursor: pointer; transition: all 0.15s;
   }
   .btn-primary { background: var(--accent); color: #fff; }
@@ -74,7 +73,7 @@
     min-height: 48px; flex-wrap: wrap;
   }
   .chart-title {
-    font-family: 'Instrument Serif', Georgia, serif;
+    font-family: Georgia, serif;
     font-size: 20px; font-weight: 400; color: #111827; letter-spacing: -0.3px;
   }
   .toolbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -100,7 +99,7 @@
     appearance: none; -webkit-appearance: none;
     padding: 4px 24px 4px 8px; border-radius: 5px;
     border: 1px solid #d1d5db; background: #fff;
-    font-family: 'Outfit', sans-serif; font-size: 11.5px; color: #374151;
+    font-family: system-ui, sans-serif; font-size: 11.5px; color: #374151;
     cursor: pointer; outline: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 7px center;
@@ -110,7 +109,7 @@
   .palette-dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.08); }
 
   .chart-container { flex: 1; overflow: auto; padding: 20px 24px 36px; }
-  #gantt-svg { display: block; font-family: 'Outfit', system-ui, sans-serif; }
+  #gantt-svg { display: block; font-family: system-ui, sans-serif; }
   .bar { cursor: grab; }
   .bar:active { cursor: grabbing; }
   .bar-edge { cursor: col-resize; opacity: 0; }
@@ -122,12 +121,12 @@
   .row-hide-btn:hover { opacity: 1 !important; }
   .bar-label {
     pointer-events: none; fill: #fff;
-    font-family: 'Outfit', sans-serif; font-weight: 500;
+    font-family: system-ui, sans-serif; font-weight: 500;
     paint-order: stroke fill; stroke: rgba(0,0,0,0.35); stroke-width: 2.5px; stroke-linejoin: round;
   }
   .bar-label-dark {
     pointer-events: none; fill: #374151;
-    font-family: 'Outfit', sans-serif; font-weight: 500;
+    font-family: system-ui, sans-serif; font-weight: 500;
   }
 
   .tooltip {
@@ -416,7 +415,7 @@ function renderChart(data) {
       stroke:c===0?'#d1d5db':'#ebedf0','stroke-width':c===0?1:0.7}));
     if (c<cols) {
       const t = el('text',{x:x+colW/2,y:HDR_H-10,'text-anchor':'middle',
-        'font-size':Math.min(11.5,colW*0.26),fill:'#6b7280','font-family':"'Outfit',sans-serif"});
+        'font-size':Math.min(11.5,colW*0.26),fill:'#6b7280','font-family':"system-ui,sans-serif"});
       t.textContent = prefix+(minT+c); root.appendChild(t);
     }
   }
@@ -439,7 +438,7 @@ function renderChart(data) {
     // Side labels (only in side mode)
     if (!st.labelsOnBars && !r.shared) {
       const lb = el('text',{x:LW-24,y:y+ROW_H/2+1,'text-anchor':'end','dominant-baseline':'middle',
-        'font-size':Math.max(9,13*Math.min(1,zV)),fill:'#374151','font-family':"'Outfit',sans-serif"});
+        'font-size':Math.max(9,13*Math.min(1,zV)),fill:'#374151','font-family':"system-ui,sans-serif"});
       lb.textContent = task.name; rowG.appendChild(lb);
     }
     // Hide button (side mode: left gutter; bar mode: skip, use tooltip/hover)
@@ -543,7 +542,7 @@ function renderGrpHdr(root, r, y, ROW_H, colW, minT, LW) {
   ch.textContent = r.collapsed?'▶':'▾'; gg.appendChild(ch);
   // Name
   const lb = el('text',{x:26,y:y+ROW_H/2+1,'dominant-baseline':'middle',
-    'font-size':'12',fill:'#374151','font-weight':'600','font-family':"'Outfit',sans-serif"});
+    'font-size':'12',fill:'#374151','font-weight':'600','font-family':"system-ui,sans-serif"});
   lb.textContent = r.name; gg.appendChild(lb);
   // Bar
   if (isFinite(r.start)&&isFinite(r.end)) {
@@ -684,7 +683,7 @@ function getPrefix(u) {
 function exportSVG() {
   const svg=document.getElementById('gantt-svg'),c=svg.cloneNode(true);
   const s=document.createElementNS('http://www.w3.org/2000/svg','style');
-  s.textContent=`@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap');`;
+  s.textContent=``;
   c.insertBefore(s,c.firstChild); c.setAttribute('xmlns','http://www.w3.org/2000/svg');
   // Remove interactive elements
   c.querySelectorAll('.bar-edge,.row-hide-btn').forEach(e=>e.remove());
@@ -717,13 +716,12 @@ function exportHTML() {
   const html=`<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>${esc(title)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Outfit',system-ui,sans-serif;background:#fdfdfc;color:#1f2937;padding:32px 40px;min-height:100vh}
-h1{font-family:'Instrument Serif',Georgia,serif;font-size:24px;font-weight:400;color:#111827;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #e5e7eb}
-.cw{overflow-x:auto} svg{display:block;font-family:'Outfit',system-ui,sans-serif} .bar{cursor:pointer}
-.tooltip{position:fixed;pointer-events:none;background:#111827;color:#f0f0f0;padding:8px 12px;border-radius:6px;font-size:12px;line-height:1.5;box-shadow:0 4px 12px rgba(0,0,0,.25);opacity:0;transition:opacity .15s;z-index:999;max-width:260px;font-family:'Outfit',system-ui,sans-serif}
+body{font-family:system-ui,sans-serif;background:#fdfdfc;color:#1f2937;padding:32px 40px;min-height:100vh}
+h1{font-family:Georgia,serif;font-size:24px;font-weight:400;color:#111827;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #e5e7eb}
+.cw{overflow-x:auto} svg{display:block;font-family:system-ui,sans-serif} .bar{cursor:pointer}
+.tooltip{position:fixed;pointer-events:none;background:#111827;color:#f0f0f0;padding:8px 12px;border-radius:6px;font-size:12px;line-height:1.5;box-shadow:0 4px 12px rgba(0,0,0,.25);opacity:0;transition:opacity .15s;z-index:999;max-width:260px;font-family:system-ui,sans-serif}
 .tooltip.visible{opacity:1}
 @media print{body{padding:16px}h1{font-size:18px}}
 </style></head><body>
