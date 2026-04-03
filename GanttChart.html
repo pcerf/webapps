@@ -158,7 +158,10 @@
       <div class="ref-content">
         <strong>Settings (one per line):</strong><br>
         <code>title: My Project</code><br>
-        <code>unit: months</code> (default: quarters)<br><br>
+        <code>unit: months</code> (default: quarters)<br>
+        <code>palette: vivid</code> · <code>labels: bar</code><br>
+        <code>arrow-color: blue</code> · <code>arrow-ortho: true</code><br>
+        <small style="color:#6b7280">UI controls auto-sync these settings</small><br><br>
         <strong>Tasks:</strong><br>
         <code>- Name | start-end</code><br>
         <code>- Name | start-end | deps: A, B</code><br><br>
@@ -194,7 +197,6 @@
     <button class="btn btn-primary" onclick="exportMD()">MD</button>
     <span style="flex:1"></span>
     <button class="btn btn-ghost" id="refToggle" onclick="toggleRef()">Format ▴</button>
-    <button class="btn btn-ghost" onclick="loadExample()">Example</button>
   </div>
 </aside>
 
@@ -321,14 +323,14 @@ const PALETTES = {
 };
 let currentPalette = 'academic';
 function getColors() { return PALETTES[currentPalette]; }
-function changePalette() { currentPalette = document.getElementById('paletteSelect').value; updatePaletteDots(); render(); }
+function changePalette() { currentPalette = document.getElementById('paletteSelect').value; updatePaletteDots(); updateSettingsInText(); render(); }
 function updatePaletteDots() {
   const c = document.getElementById('paletteDots'); c.innerHTML = '';
   getColors().slice(0,6).forEach(col => { const d = document.createElement('span'); d.className='palette-dot'; d.style.backgroundColor=col; c.appendChild(d); });
 }
 
 // ============================== STATE ==============================
-const BASE_ROW_H = 44, BASE_BAR_H = 26, HDR_H = 38, LABEL_W = 210, MIN_COL_W = 44, GRP_BAR_H = 10;
+const BASE_ROW_H = 44, BASE_BAR_H = 26, HDR_H = 38, MIN_COL_W = 44, GRP_BAR_H = 10;
 const PAD = { t: 6, r: 28, b: 16, l: 14 };
 const ARROW_COLORS = {
   gray:    '#9ca3af', dark:    '#4b5563', light:   '#d1d5db',
@@ -340,7 +342,7 @@ const ARROW_COLORS = {
   teal:    '#14b8a6', cyan:    '#06b6d4',
   brown:   '#92400e', bronze:  '#a16207', sand:    '#b0956e'
 };
-const st = { zoomH: 1, zoomV: 1, collapsedGroups: new Set(), hiddenTasks: new Set(), drag: null, labelsOnBars: false, fontScale: 1, arrowWidth: 1.3, arrowColor: 'gray', arrowCurve: 0.35, arrowOrtho: false };
+const st = { zoomH: 1, zoomV: 1, collapsedGroups: new Set(), hiddenTasks: new Set(), drag: null, labelsOnBars: false, fontScale: 1, arrowWidth: 1.3, arrowColor: 'gray', arrowCurve: 0.35, arrowOrtho: false, labelWidth: 210 };
 let lastParsed = null;
 
 // ============================== PARSER ==============================
@@ -354,6 +356,16 @@ function parseInput(text) {
     if (!tr || tr.startsWith('//')) continue;
     if (/^unit\s*:/i.test(tr)) { unit = tr.replace(/^unit\s*:\s*/i,'').trim(); continue; }
     if (/^title\s*:/i.test(tr)) { title = tr.replace(/^title\s*:\s*/i,'').trim(); continue; }
+    if (/^palette\s*:/i.test(tr)) { applySetting('palette', tr.replace(/^palette\s*:\s*/i,'').trim()); continue; }
+    if (/^labels\s*:/i.test(tr)) { applySetting('labels', tr.replace(/^labels\s*:\s*/i,'').trim()); continue; }
+    if (/^font-scale\s*:/i.test(tr)) { applySetting('font-scale', tr.replace(/^font-scale\s*:\s*/i,'').trim()); continue; }
+    if (/^label-width\s*:/i.test(tr)) { applySetting('label-width', tr.replace(/^label-width\s*:\s*/i,'').trim()); continue; }
+    if (/^arrow-width\s*:/i.test(tr)) { applySetting('arrow-width', tr.replace(/^arrow-width\s*:\s*/i,'').trim()); continue; }
+    if (/^arrow-curve\s*:/i.test(tr)) { applySetting('arrow-curve', tr.replace(/^arrow-curve\s*:\s*/i,'').trim()); continue; }
+    if (/^arrow-color\s*:/i.test(tr)) { applySetting('arrow-color', tr.replace(/^arrow-color\s*:\s*/i,'').trim()); continue; }
+    if (/^arrow-ortho\s*:/i.test(tr)) { applySetting('arrow-ortho', tr.replace(/^arrow-ortho\s*:\s*/i,'').trim()); continue; }
+    if (/^zoom-h\s*:/i.test(tr)) { applySetting('zoom-h', tr.replace(/^zoom-h\s*:\s*/i,'').trim()); continue; }
+    if (/^zoom-v\s*:/i.test(tr)) { applySetting('zoom-v', tr.replace(/^zoom-v\s*:\s*/i,'').trim()); continue; }
     if (/^#+\s+/.test(tr)) {
       if (cur.name !== null || cur.tasks.length) groups.push(cur);
       cur = { name: tr.replace(/^#+\s*/,'').trim(), tasks: [] }; continue;
@@ -451,7 +463,7 @@ function renderChart(data) {
 
   const zH = st.zoomH, zV = st.zoomV, fs = st.fontScale;
   const ROW_H = BASE_ROW_H * zV, BAR_H = BASE_BAR_H * zV;
-  const LW = st.labelsOnBars ? 26 : LABEL_W; // dynamic label column width
+  const LW = st.labelsOnBars ? 26 : st.labelWidth; // dynamic label column width
   const minT = Math.min(...data.allTasks.map(t=>t.start));
   const maxT = Math.max(...data.allTasks.map(t=>t.end));
   const span = maxT - minT || 1, cols = Math.ceil(span);
@@ -629,6 +641,13 @@ function renderChart(data) {
   });
   root.appendChild(arrowG);
 
+  // Label column resize handle
+  if (!st.labelsOnBars) {
+    const rh = el('rect',{x:LW-3,y:0,width:6,height:chartH,fill:'transparent',class:'label-resize-handle'});
+    rh.style.cursor='col-resize';
+    root.appendChild(rh);
+  }
+
   // Store for drag
   svg._L = { LABEL_W: LW, colW, minT, ROW_H, BAR_H, allTasks: data.allTasks, prefix };
   attachEvents(svg);
@@ -680,6 +699,24 @@ function attachEvents(svg) {
   svg.querySelectorAll('.bar-edge').forEach(b => {
     b.addEventListener('mousedown', e => { e.stopPropagation(); startDrag(e, b.getAttribute('data-edge'), L); });
   });
+  const rh = svg.querySelector('.label-resize-handle');
+  if (rh) {
+    rh.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const startX = e.clientX, startW = st.labelWidth;
+      const onMove = ev => {
+        st.labelWidth = clamp(Math.round(startW + ev.clientX - startX), 60, 600);
+        render(true);
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        updateSettingsInText();
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
 }
 
 // ============================== DRAG ==============================
@@ -742,6 +779,113 @@ function endDrag() {
   render();
 }
 
+// ============================== SETTINGS SYNC ==============================
+const SETTING_KEYS = ['palette','labels','font-scale','label-width','arrow-width','arrow-curve','arrow-color','arrow-ortho','zoom-h','zoom-v'];
+const SETTING_DEFAULTS = { palette:'academic', labels:'side', 'font-scale':'1', 'label-width':'210', 'arrow-width':'1.3', 'arrow-curve':'0.35', 'arrow-color':'gray', 'arrow-ortho':'false', 'zoom-h':'1', 'zoom-v':'1' };
+
+function applySetting(key, val) {
+  switch(key) {
+    case 'palette':
+      if (PALETTES[val]) { currentPalette = val; document.getElementById('paletteSelect').value = val; updatePaletteDots(); }
+      break;
+    case 'labels':
+      st.labelsOnBars = val === 'bar';
+      document.getElementById('labelBtn').textContent = st.labelsOnBars ? 'Bar' : 'Side';
+      break;
+    case 'font-scale':
+      st.fontScale = clamp(parseFloat(val)||1, 0.5, 2);
+      document.getElementById('fontSizeSlider').value = st.fontScale;
+      break;
+    case 'label-width':
+      st.labelWidth = clamp(parseInt(val)||210, 60, 600);
+      break;
+    case 'arrow-width':
+      st.arrowWidth = clamp(parseFloat(val)||1.3, 0.5, 4);
+      document.getElementById('arrowWidthSlider').value = st.arrowWidth;
+      break;
+    case 'arrow-curve':
+      st.arrowCurve = clamp(isNaN(parseFloat(val))?0.35:parseFloat(val), 0, 1);
+      document.getElementById('arrowCurveSlider').value = st.arrowCurve;
+      break;
+    case 'arrow-color':
+      if (ARROW_COLORS[val]) { st.arrowColor = val; document.getElementById('arrowColorSelect').value = val; }
+      break;
+    case 'arrow-ortho':
+      st.arrowOrtho = val === 'true';
+      document.getElementById('arrowOrtho').checked = st.arrowOrtho;
+      break;
+    case 'zoom-h':
+      st.zoomH = clamp(parseFloat(val)||1, 0.4, 4);
+      document.getElementById('zoomHPct').textContent = Math.round(st.zoomH*100)+'%';
+      break;
+    case 'zoom-v':
+      st.zoomV = clamp(parseFloat(val)||1, 0.4, 4);
+      document.getElementById('zoomVPct').textContent = Math.round(st.zoomV*100)+'%';
+      break;
+  }
+}
+
+function getSettingsValues() {
+  return {
+    palette: currentPalette,
+    labels: st.labelsOnBars ? 'bar' : 'side',
+    'font-scale': String(st.fontScale),
+    'label-width': String(st.labelWidth),
+    'arrow-width': String(st.arrowWidth),
+    'arrow-curve': String(st.arrowCurve),
+    'arrow-color': st.arrowColor,
+    'arrow-ortho': String(st.arrowOrtho),
+    'zoom-h': String(st.zoomH),
+    'zoom-v': String(st.zoomV)
+  };
+}
+
+function updateSettingsInText() {
+  const ta = document.getElementById('input');
+  const text = ta.value;
+  const lines = text.split('\n');
+  const vals = getSettingsValues();
+  // Update existing setting lines or track which ones need inserting
+  const found = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    for (const key of SETTING_KEYS) {
+      const re = new RegExp('^' + key.replace('-','\\-') + '\\s*:', 'i');
+      if (re.test(lines[i].trim())) {
+        found.add(key);
+        const newVal = vals[key];
+        if (newVal === SETTING_DEFAULTS[key]) {
+          lines.splice(i, 1); i--;
+        } else {
+          lines[i] = key + ': ' + newVal;
+        }
+        break;
+      }
+    }
+  }
+  // Insert new non-default settings after title/unit block
+  const toInsert = SETTING_KEYS.filter(k => !found.has(k) && vals[k] !== SETTING_DEFAULTS[k]);
+  if (toInsert.length) {
+    // Find insertion point: after last settings-like line at top
+    let insertAt = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const tr = lines[i].trim();
+      if (!tr || tr.startsWith('//') || /^(title|unit|palette|labels|font-scale|arrow-width|arrow-curve|arrow-color|arrow-ortho)\s*:/i.test(tr)) {
+        insertAt = i + 1;
+      } else break;
+    }
+    for (const key of toInsert) {
+      lines.splice(insertAt, 0, key + ': ' + vals[key]);
+      insertAt++;
+    }
+  }
+  const newText = lines.join('\n');
+  if (newText !== text) {
+    const start = ta.selectionStart, end = ta.selectionEnd;
+    ta.value = newText;
+    ta.selectionStart = start; ta.selectionEnd = end;
+  }
+}
+
 // ============================== ZOOM ==============================
 function doZoom(axis,dir) {
   if (axis==='reset') { st.zoomH=1; st.zoomV=1; }
@@ -752,21 +896,21 @@ function doZoom(axis,dir) {
   }
   document.getElementById('zoomHPct').textContent=Math.round(st.zoomH*100)+'%';
   document.getElementById('zoomVPct').textContent=Math.round(st.zoomV*100)+'%';
-  render(true);
+  updateSettingsInText(); render(true);
 }
 function clamp(v,lo,hi) { return Math.min(hi,Math.max(lo,v)); }
 function toggleLabels() {
   st.labelsOnBars = !st.labelsOnBars;
   document.getElementById('labelBtn').textContent = st.labelsOnBars ? 'Bar' : 'Side';
-  render(true);
+  updateSettingsInText(); render(true);
 }
-function changeFontScale(v) { st.fontScale = parseFloat(v); render(true); }
+function changeFontScale(v) { st.fontScale = parseFloat(v); updateSettingsInText(); render(true); }
 
 // ============================== ARROWS ==============================
-function changeArrowWidth(v) { st.arrowWidth = parseFloat(v); render(true); }
-function changeArrowCurve(v) { st.arrowCurve = parseFloat(v); render(true); }
-function changeArrowColor() { st.arrowColor = document.getElementById('arrowColorSelect').value; render(true); }
-function toggleArrowOrtho() { st.arrowOrtho = document.getElementById('arrowOrtho').checked; render(true); }
+function changeArrowWidth(v) { st.arrowWidth = parseFloat(v); updateSettingsInText(); render(true); }
+function changeArrowCurve(v) { st.arrowCurve = parseFloat(v); updateSettingsInText(); render(true); }
+function changeArrowColor() { st.arrowColor = document.getElementById('arrowColorSelect').value; updateSettingsInText(); render(true); }
+function toggleArrowOrtho() { st.arrowOrtho = document.getElementById('arrowOrtho').checked; updateSettingsInText(); render(true); }
 
 // ============================== HIDDEN ==============================
 function updateHiddenBadge() {
@@ -821,8 +965,10 @@ function exportPNG() {
 }
 function exportHTML() {
   const c=prepExportSvg();
+  c.querySelector('.label-resize-handle')?.remove();
   const svgStr=new XMLSerializer().serializeToString(c);
   const title=document.getElementById('chartTitle').textContent;
+  const mdText=document.getElementById('input').value;
   const data=lastParsed,prefix=getPrefix(data.unit);
   const td=JSON.stringify(data.allTasks.filter(t=>t._cy!==undefined).map(t=>({
     name:t.name,start:t.start,end:t.end,fi:data.allTasks.indexOf(t),
@@ -835,14 +981,21 @@ function exportHTML() {
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,sans-serif;background:#fdfdfc;color:#1f2937;padding:32px 40px;min-height:100vh}
 h1{font-family:Georgia,serif;font-size:24px;font-weight:400;color:#111827;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #e5e7eb}
+.hdr{display:flex;align-items:flex-start;justify-content:space-between}
+.copy-btn{background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:6px 12px;font-size:12px;font-family:system-ui,sans-serif;color:#374151;cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .15s}
+.copy-btn:hover{background:#e5e7eb}
+.copy-btn.copied{background:#d1fae5;border-color:#86efac;color:#166534}
 .cw{overflow-x:auto} svg{display:block;font-family:system-ui,sans-serif} .bar{cursor:pointer}
 .tooltip{position:fixed;pointer-events:none;background:#111827;color:#f0f0f0;padding:8px 12px;border-radius:6px;font-size:12px;line-height:1.5;box-shadow:0 4px 12px rgba(0,0,0,.25);opacity:0;transition:opacity .15s;z-index:999;max-width:260px;font-family:system-ui,sans-serif}
 .tooltip.visible{opacity:1}
-@media print{body{padding:16px}h1{font-size:18px}}
+@media print{body{padding:16px}h1{font-size:18px}.copy-btn{display:none}}
 </style></head><body>
-<h1>${esc(title)}</h1><div class="cw">${svgStr}</div>
+<div class="hdr"><h1>${esc(title)}</h1><button class="copy-btn" id="copyBtn" onclick="copyMD()"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 009.5 2h-6A1.5 1.5 0 002 3.5v6A1.5 1.5 0 003.5 11H5"/></svg><span id="copyLabel">Copy MD</span></button></div>
+<div class="cw">${svgStr}</div>
 <div class="tooltip" id="tooltip"></div>
 <script>
+const md=${JSON.stringify(mdText)};
+function copyMD(){navigator.clipboard.writeText(md).then(()=>{const b=document.getElementById('copyBtn'),l=document.getElementById('copyLabel');b.classList.add('copied');l.textContent='Copied!';setTimeout(()=>{b.classList.remove('copied');l.textContent='Copy MD'},1500)});}
 const tasks=${td},prefix='${prefix}',tip=document.getElementById('tooltip');
 document.querySelectorAll('.bar').forEach(b=>{
 b.addEventListener('mouseenter',e=>{const fi=+e.target.getAttribute('data-fi');const t=tasks.find(x=>x.fi===fi);if(!t)return;
@@ -863,10 +1016,18 @@ function toggleRef(){
   p.classList.toggle('open'); b.textContent=p.classList.contains('open')?'Format ▾':'Format ▴';
 }
 
-// ============================== EXAMPLE ==============================
-function loadExample(){
-  if (document.getElementById('input').value.trim() && !confirm('This will overwrite your current chart. Continue?')) return;
-  document.getElementById('input').value=`title: Hybrid ML Framework
+// ============================== INIT ==============================
+let dbT;
+document.getElementById('input').addEventListener('input',()=>{clearTimeout(dbT);dbT=setTimeout(render,180);});
+window.addEventListener('resize',()=>{clearTimeout(dbT);dbT=setTimeout(()=>render(true),100);});
+
+document.getElementById('chartContainer').addEventListener('wheel',e=>{
+  if(!e.ctrlKey&&!e.metaKey)return; e.preventDefault();
+  const dir=e.deltaY<0?1:-1;
+  if(e.shiftKey) doZoom('v',dir); else doZoom('h',dir);
+},{passive:false});
+
+document.getElementById('input').value=`title: Hybrid ML Framework
 unit: quarters
 
 # Phase 1 — Foundation
@@ -888,21 +1049,7 @@ unit: quarters
 - Journal Paper | 10-12 | id: JP | deps: RE!
 - Conference Talk | 11-12 | deps: JP
 - Open-Source Release | 11-12 | deps: TP!`;
-  st.collapsedGroups.clear(); st.hiddenTasks.clear(); render();
-}
-
-// ============================== INIT ==============================
-let dbT;
-document.getElementById('input').addEventListener('input',()=>{clearTimeout(dbT);dbT=setTimeout(render,180);});
-window.addEventListener('resize',()=>{clearTimeout(dbT);dbT=setTimeout(()=>render(true),100);});
-
-document.getElementById('chartContainer').addEventListener('wheel',e=>{
-  if(!e.ctrlKey&&!e.metaKey)return; e.preventDefault();
-  const dir=e.deltaY<0?1:-1;
-  if(e.shiftKey) doZoom('v',dir); else doZoom('h',dir);
-},{passive:false});
-
-updatePaletteDots(); loadExample();
+updatePaletteDots(); render();
 </script>
 </body>
 </html>
