@@ -7,8 +7,6 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0b1120">
 <title>DocScan</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -282,10 +280,22 @@ textarea.setting-input{min-height:80px;resize:vertical;line-height:1.5}
 
       <div class="settings-section">
         <h3>OCR</h3>
-        <div class="setting-input-group">
-          <label class="setting-label" style="font-size:13px;display:block;margin-bottom:4px">Languages</label>
-          <input type="text" class="setting-input" id="set-ocr-langs" value="" placeholder="eng+deu">
-          <div class="placeholder-help">Tesseract language codes, joined with <code>+</code>. Common: <code>eng</code> <code>deu</code> <code>fra</code> <code>spa</code></div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+          <div>
+            <div class="setting-label">Enable OCR</div>
+            <div class="setting-desc">Extract text from scanned pages. Requires loading Tesseract.js from an external CDN on first use.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-ocr-enabled" onchange="onOcrToggle()">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div id="ocr-options" style="display:none">
+          <div class="setting-input-group">
+            <label class="setting-label" style="font-size:13px;display:block;margin-bottom:4px">Languages</label>
+            <input type="text" class="setting-input" id="set-ocr-langs" value="" placeholder="eng+deu">
+            <div class="placeholder-help">Tesseract language codes, joined with <code>+</code>. Common: <code>eng</code> <code>deu</code> <code>fra</code> <code>spa</code></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1463,6 +1473,7 @@ const DEFAULT_SETTINGS = {
   llmEnabled: false,
   llmModel: 'onnx-community/Qwen2.5-0.5B-Instruct',
   llmPrompt: 'You are a document title generator. Based on the OCR text from a scanned document, generate a short, descriptive title. Reply with ONLY the title, nothing else. Keep it under 60 characters. Do not use quotes.',
+  ocrEnabled: false,
   ocrLangs: 'eng+deu',
 };
 
@@ -1484,6 +1495,7 @@ function saveSettings() {
     llmEnabled: document.getElementById('set-llm-enabled').checked,
     llmModel: document.getElementById('set-llm-model').value || DEFAULT_SETTINGS.llmModel,
     llmPrompt: document.getElementById('set-llm-prompt').value || DEFAULT_SETTINGS.llmPrompt,
+    ocrEnabled: document.getElementById('set-ocr-enabled').checked,
     ocrLangs: document.getElementById('set-ocr-langs').value || DEFAULT_SETTINGS.ocrLangs,
   };
   localStorage.setItem('docscan_settings', JSON.stringify(s));
@@ -1497,6 +1509,7 @@ function getSettings() {
     llmEnabled: document.getElementById('set-llm-enabled').checked,
     llmModel: document.getElementById('set-llm-model').value || DEFAULT_SETTINGS.llmModel,
     llmPrompt: document.getElementById('set-llm-prompt').value || DEFAULT_SETTINGS.llmPrompt,
+    ocrEnabled: document.getElementById('set-ocr-enabled').checked,
     ocrLangs: document.getElementById('set-ocr-langs').value || DEFAULT_SETTINGS.ocrLangs,
   };
 }
@@ -1507,6 +1520,8 @@ function populateSettingsUI() {
   document.getElementById('set-llm-enabled').checked = s.llmEnabled;
   document.getElementById('set-llm-model').value = s.llmModel;
   document.getElementById('set-llm-prompt').value = s.llmPrompt;
+  document.getElementById('set-ocr-enabled').checked = s.ocrEnabled;
+  document.getElementById('ocr-options').style.display = s.ocrEnabled ? 'block' : 'none';
   document.getElementById('set-ocr-langs').value = s.ocrLangs;
   document.getElementById('llm-options').style.display = s.llmEnabled ? 'block' : 'none';
 }
@@ -1517,11 +1532,48 @@ function onLlmToggle() {
   saveSettings();
 }
 
+function onOcrToggle() {
+  const on = document.getElementById('set-ocr-enabled').checked;
+  document.getElementById('ocr-options').style.display = on ? 'block' : 'none';
+  saveSettings();
+}
+
 // Auto-save settings on input change (debounced)
 let settingsSaveTimer = null;
 function onSettingChange() {
   if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
   settingsSaveTimer = setTimeout(saveSettings, 500);
+}
+
+// ===== CONSENT & DYNAMIC LOADING =====
+function showConsentPrompt(featureName, description) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `<div class="modal">
+      <h3>External Library Required</h3>
+      <p style="font-size:14px;color:var(--text2);margin:12px 0;line-height:1.5">${description}</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="consent-no">Cancel</button>
+        <button class="btn btn-primary" id="consent-yes">Allow &amp; Continue</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#consent-yes').onclick = () => { overlay.remove(); resolve(true); };
+    overlay.querySelector('#consent-no').onclick = () => { overlay.remove(); resolve(false); };
+  });
+}
+
+let tesseractLoaded = false;
+async function loadTesseract() {
+  if (tesseractLoaded) return true;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = () => { tesseractLoaded = true; resolve(true); };
+    s.onerror = () => reject(new Error('Failed to load Tesseract.js'));
+    document.head.appendChild(s);
+  });
 }
 
 // ===== LLM (Transformers.js) =====
@@ -1541,6 +1593,12 @@ function setLlmStatus(status, text) {
 }
 
 async function loadLLM() {
+  const consent = await showConsentPrompt('AI Title Generation',
+    'This feature requires loading <strong>Transformers.js</strong> and downloading an AI model (~150 MB) from external servers (<code>cdn.jsdelivr.net</code> and <code>huggingface.co</code>). The model runs locally in your browser — no document data is sent externally.');
+  if (!consent) {
+    setLlmStatus('off', 'Model not loaded');
+    return false;
+  }
   const settings = getSettings();
   setLlmStatus('loading', 'Loading Transformers.js...');
   try {
@@ -1686,10 +1744,36 @@ function suggestTitle(ocrText) {
 // ===== PDF EXPORT =====
 async function startExport() {
   if (state.pages.length === 0) return;
+  const settings = getSettings();
+
+  if (!settings.ocrEnabled) {
+    // No OCR — go straight to export modal
+    document.getElementById('pdf-title').value = 'Scanned Document';
+    document.getElementById('ocr-preview-text').textContent = 'OCR is disabled. Enable it in Settings to extract text and generate titles.';
+    document.getElementById('ocr-badge').textContent = `No OCR · ${state.pages.length} page${state.pages.length>1?'s':''}`;
+    updateFilenamePreview();
+    document.getElementById('export-modal').classList.add('active');
+    return;
+  }
+
+  // OCR enabled — ensure Tesseract is loaded
+  if (!tesseractLoaded) {
+    const consent = await showConsentPrompt('OCR',
+      'OCR requires loading <strong>Tesseract.js</strong> from an external CDN (<code>cdn.jsdelivr.net</code>). This will make a network request to download the library and language models. No document data is sent externally — all processing happens in your browser.');
+    if (!consent) return;
+    showProcessing('Loading OCR library...', '');
+    try {
+      await loadTesseract();
+    } catch(e) {
+      hideProcessing();
+      alert('Failed to load OCR library: ' + e.message);
+      return;
+    }
+  }
+
   showProcessing('Running OCR...', '');
   try {
     const fullText = await runOCR(state.pages);
-    const settings = getSettings();
 
     // Title: try LLM first, fall back to heuristic
     let title;
@@ -1724,48 +1808,177 @@ function closeExportModal() {
   document.getElementById('export-modal').classList.remove('active');
 }
 
+function buildPDF(pages, docTitle) {
+  const MM2PT = 72 / 25.4;
+  const A4W = 210 * MM2PT, A4H = 297 * MM2PT;
+
+  let objCount = 0;
+  const objects = []; // {id, data} where data is string
+  const newObj = () => ++objCount;
+
+  function pdfString(s) {
+    return '(' + s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)') + ')';
+  }
+
+  // Collect page data
+  const pageData = [];
+  for (let i = 0; i < pages.length; i++) {
+    const canvas = pages[i].enhanced;
+    const b64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+    const jpegBytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+
+    // Parse JPEG dimensions from SOF0 marker
+    let imgW = canvas.width, imgH = canvas.height;
+    for (let j = 0; j < jpegBytes.length - 1; j++) {
+      if (jpegBytes[j] === 0xFF && (jpegBytes[j+1] === 0xC0 || jpegBytes[j+1] === 0xC2)) {
+        imgH = (jpegBytes[j+5] << 8) | jpegBytes[j+6];
+        imgW = (jpegBytes[j+7] << 8) | jpegBytes[j+8];
+        break;
+      }
+    }
+
+    const ratio = imgW / imgH;
+    let pw, ph;
+    if (ratio > A4W / A4H) {
+      pw = A4W; ph = A4W / ratio;
+    } else {
+      ph = A4H; pw = A4H * ratio;
+    }
+
+    pageData.push({ jpegBytes, imgW, imgH, pw, ph, ocrText: pages[i].ocrText || '' });
+  }
+
+  // Allocate object IDs
+  const catalogId = newObj();    // 1
+  const pagesId = newObj();      // 2
+  const infoId = newObj();       // 3
+  const fontId = newObj();       // 4
+
+  const pageIds = [];
+  const imgIds = [];
+  const contentIds = [];
+  for (let i = 0; i < pageData.length; i++) {
+    pageIds.push(newObj());
+    imgIds.push(newObj());
+    contentIds.push(newObj());
+  }
+
+  // Build objects
+  objects[catalogId] = `${catalogId} 0 obj\n<< /Type /Catalog /Pages ${pagesId} 0 R >>\nendobj`;
+
+  const pageRefs = pageIds.map(id => `${id} 0 R`).join(' ');
+  objects[pagesId] = `${pagesId} 0 obj\n<< /Type /Pages /Kids [${pageRefs}] /Count ${pageData.length} >>\nendobj`;
+
+  // Info
+  const now = new Date();
+  const dateStr = `D:${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+  objects[infoId] = `${infoId} 0 obj\n<< /Title ${pdfString(docTitle)} /Creator (DocScan PWA) /CreationDate (${dateStr}) >>\nendobj`;
+
+  // Font (Helvetica - standard, no embedding needed)
+  objects[fontId] = `${fontId} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj`;
+
+  // Pages and images
+  const streamObjects = []; // {id, header, binaryData}
+
+  for (let i = 0; i < pageData.length; i++) {
+    const pd = pageData[i];
+    const imgName = `/Img${i}`;
+
+    // Content stream (draw image + optional OCR text)
+    let stream = `q ${pd.pw.toFixed(2)} 0 0 ${pd.ph.toFixed(2)} 0 0 cm ${imgName} Do Q\n`;
+    if (pd.ocrText) {
+      const safeText = pd.ocrText.substring(0, 2000).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)').replace(/[\r\n]+/g, ' ');
+      stream += `BT /F1 0.5 Tf 1 1 1 rg 1 ${(pd.ph - 2).toFixed(2)} Td ${(pd.pw - 4).toFixed(2)} TL (${safeText}) Tj ET\n`;
+    }
+    const streamBytes = new TextEncoder().encode(stream);
+    objects[contentIds[i]] = `${contentIds[i]} 0 obj\n<< /Length ${streamBytes.length} >>\nstream\n`;
+    streamObjects.push({ id: contentIds[i], suffix: streamBytes, end: '\nendstream\nendobj' });
+
+    // Image XObject
+    objects[imgIds[i]] = `${imgIds[i]} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${pd.imgW} /Height ${pd.imgH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pd.jpegBytes.length} >>\nstream\n`;
+    streamObjects.push({ id: imgIds[i], suffix: pd.jpegBytes, end: '\nendstream\nendobj' });
+
+    // Page object
+    objects[pageIds[i]] = `${pageIds[i]} 0 obj\n<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pd.pw.toFixed(2)} ${pd.ph.toFixed(2)}] /Contents ${contentIds[i]} 0 R /Resources << /XObject << ${imgName} ${imgIds[i]} 0 R >> /Font << /F1 ${fontId} 0 R >> >> >>\nendobj`;
+  }
+
+  // Assemble PDF
+  const encoder = new TextEncoder();
+  const parts = [];
+  const offsets = {};
+  let pos = 0;
+
+  function addStr(s) { const b = encoder.encode(s); parts.push(b); pos += b.length; }
+  function addBytes(b) { parts.push(b); pos += b.length; }
+
+  addStr('%PDF-1.4\n%\xC0\xC1\xC2\xC3\n');
+
+  // Write all objects in order
+  for (let id = 1; id <= objCount; id++) {
+    offsets[id] = pos;
+    const objStr = objects[id];
+    if (!objStr) continue;
+
+    const so = streamObjects.find(s => s.id === id);
+    if (so) {
+      addStr(objStr);
+      addBytes(so.suffix instanceof Uint8Array ? so.suffix : encoder.encode(so.suffix));
+      addStr(so.end + '\n');
+    } else {
+      addStr(objStr + '\n');
+    }
+  }
+
+  // Cross-reference table
+  const xrefPos = pos;
+  addStr('xref\n');
+  addStr(`0 ${objCount + 1}\n`);
+  addStr('0000000000 65535 f \n');
+  for (let id = 1; id <= objCount; id++) {
+    addStr(String(offsets[id] || 0).padStart(10, '0') + ' 00000 n \n');
+  }
+
+  addStr('trailer\n');
+  addStr(`<< /Size ${objCount + 1} /Root ${catalogId} 0 R /Info ${infoId} 0 R >>\n`);
+  addStr('startxref\n');
+  addStr(`${xrefPos}\n`);
+  addStr('%%EOF\n');
+
+  // Merge all parts into single Uint8Array
+  const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
+  const result = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 async function downloadPDF() {
   closeExportModal();
   showProcessing('Generating PDF...', '');
   await new Promise(r => setTimeout(r, 50));
 
-  const { jsPDF } = window.jspdf;
   const title = document.getElementById('pdf-title').value || 'Scanned Document';
   const settings = getSettings();
   const filename = formatFilename(settings.filenameFmt, title, state.pages.length);
-  let pdf = null;
 
-  for (let i = 0; i < state.pages.length; i++) {
-    updateProcessing('Generating PDF...', `Page ${i+1} of ${state.pages.length}`);
-    const canvas = state.pages[i].enhanced;
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
-    const a4w = 210, a4h = 297;
-    const ratio = canvas.width / canvas.height;
-    let pw, ph;
-    if (ratio > a4w / a4h) {
-      pw = a4w; ph = a4w / ratio;
-    } else {
-      ph = a4h; pw = a4h * ratio;
-    }
-    const orient = pw > ph ? 'l' : 'p';
-
-    if (i === 0) {
-      pdf = new jsPDF({ orientation: orient, unit: 'mm', format: [pw, ph] });
-    } else {
-      pdf.addPage([pw, ph], orient);
-    }
-    pdf.addImage(imgData, 'JPEG', 0, 0, pw, ph);
-
-    const ocrText = state.pages[i].ocrText;
-    if (ocrText) {
-      pdf.setFontSize(1);
-      pdf.setTextColor(255, 255, 255);
-      pdf.text(ocrText.substring(0, 2000), 1, 1, { maxWidth: pw - 2 });
-    }
+  try {
+    const pdfBytes = buildPDF(state.pages, title);
+    download(new Blob([pdfBytes], {type: 'application/pdf'}), filename + '.pdf');
+  } catch(e) {
+    console.error('PDF generation error:', e);
+    alert('PDF generation failed: ' + e.message);
   }
-
-  pdf.setProperties({ title: title, creator: 'DocScan PWA' });
-  pdf.save(filename + '.pdf');
   hideProcessing();
 }
 

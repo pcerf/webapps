@@ -11,7 +11,17 @@ Just click the links below to use the App directly in your browser.
 
 ## Privacy and Security
 
-These apps are intended to run in the user's browser. **However, some apps may load third-party libraries from CDNs** (e.g., DocScan.html loads jsPDF and Tesseract.js from external CDNs), which means network requests are made and standard browser information is exposed to those servers. **You are responsible for reviewing the code yourself before use.** Use at your own risk.
+These apps are intended to run entirely in the user's browser. **However, some apps may load third-party libraries from CDNs on demand** (see [Acknowledgments](#acknowledgments) below), which means network requests are made and standard browser information is exposed to those servers. **You are responsible for reviewing the code yourself before use.** Use at your own risk.
+
+## Acknowledgments
+
+DocScan.html optionally loads the following external libraries at runtime (not bundled):
+
+- [Tesseract.js](https://github.com/naptha/tesseract.js) (Apache-2.0) — OCR engine, loaded from `cdn.jsdelivr.net` when the user enables OCR.
+- [Transformers.js](https://github.com/huggingface/transformers.js) (Apache-2.0) — ML inference runtime, loaded from `cdn.jsdelivr.net` when the user enables AI title generation.
+- [HuggingFace ONNX models](https://huggingface.co/onnx-community) (Apache-2.0) — Small language models downloaded from `huggingface.co` for local title suggestion.
+
+This list is not guaranteed to be complete. **You are responsible for reviewing the code yourself before use.** Use at your own risk.
 
 ## License
 
