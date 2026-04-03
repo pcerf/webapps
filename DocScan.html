@@ -1,0 +1,1827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b1120">
+<title>DocScan</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b1120;--surface:#131b2e;--surface2:#1a2540;--surface3:#213058;
+  --text:#e8edf5;--text2:#8896b0;--accent:#00d4aa;--accent2:#00b894;
+  --danger:#ff6b6b;--warn:#ffa94d;
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,Helvetica,Arial,sans-serif;-webkit-tap-highlight-color:transparent}
+button{font-family:inherit;cursor:pointer;border:none;outline:none;-webkit-tap-highlight-color:transparent}
+.app{height:100%;display:flex;flex-direction:column;position:relative;max-width:500px;margin:0 auto}
+.view{display:none;flex:1;flex-direction:column;overflow:hidden;position:absolute;inset:0}
+.view.active{display:flex}
+
+/* Pages View */
+.pages-header{padding:20px 20px 12px;display:flex;align-items:center;justify-content:space-between}
+.pages-header h1{font-size:24px;font-weight:700;letter-spacing:-0.5px}
+.pages-header .subtitle{font-size:13px;color:var(--text2);margin-top:2px}
+.pages-grid{flex:1;overflow-y:auto;padding:8px 16px 100px;display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.page-card{background:var(--surface);border-radius:12px;overflow:hidden;position:relative;aspect-ratio:0.72;border:2px solid transparent;transition:border-color .2s}
+.page-card img{width:100%;height:100%;object-fit:cover}
+.page-card .page-num{position:absolute;top:8px;left:8px;background:var(--bg);color:var(--accent);font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px}
+.page-card .delete-btn{position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.6);color:var(--danger);width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;backdrop-filter:blur(4px)}
+.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center}
+.empty-state .icon{font-size:64px;margin-bottom:16px;opacity:0.3}
+.empty-state p{color:var(--text2);font-size:15px;line-height:1.5}
+.bottom-bar{position:absolute;bottom:0;left:0;right:0;padding:16px 20px;padding-bottom:max(16px,env(safe-area-inset-bottom));display:flex;gap:12px;background:linear-gradient(transparent,var(--bg) 30%)}
+.btn{padding:14px 24px;border-radius:12px;font-weight:600;font-size:15px;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s}
+.btn-primary{background:var(--accent);color:#0b1120;flex:1}
+.btn-primary:active{background:var(--accent2);transform:scale(0.97)}
+.btn-secondary{background:var(--surface2);color:var(--text);flex:1}
+.btn-secondary:active{background:var(--surface3);transform:scale(0.97)}
+.btn:disabled{opacity:0.4;pointer-events:none}
+
+/* Camera View */
+.camera-view{background:#000}
+.camera-container{flex:1;position:relative;overflow:hidden}
+.camera-container video{width:100%;height:100%;object-fit:cover}
+.camera-container canvas.overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.camera-controls{position:absolute;bottom:0;left:0;right:0;padding:24px 20px;padding-bottom:max(24px,env(safe-area-inset-bottom));display:flex;align-items:center;justify-content:center;gap:40px;background:linear-gradient(transparent,rgba(0,0,0,0.8))}
+.capture-btn{width:72px;height:72px;border-radius:50%;background:white;border:4px solid rgba(255,255,255,0.3);transition:transform .1s}
+.capture-btn:active{transform:scale(0.9)}
+.cam-back-btn{color:white;background:rgba(255,255,255,0.15);width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;backdrop-filter:blur(4px)}
+.camera-hint{position:absolute;top:16px;left:0;right:0;text-align:center;color:rgba(255,255,255,0.7);font-size:13px;font-weight:500;text-shadow:0 1px 3px rgba(0,0,0,0.5)}
+.flash{position:absolute;inset:0;background:white;opacity:0;pointer-events:none;transition:opacity .05s}
+.flash.active{opacity:0.8}
+
+/* Crop View */
+.crop-header{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;background:var(--bg);z-index:2}
+.crop-header h2{font-size:18px;font-weight:600}
+.crop-canvas-wrap{flex:1;position:relative;overflow:hidden;background:#000;touch-action:none}
+.crop-canvas-inner{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+.crop-canvas-inner canvas{display:block}
+#crop-overlay{position:absolute;top:0;left:0}
+.corner-handle{position:absolute;width:36px;height:36px;border-radius:50%;background:var(--accent);border:3px solid white;touch-action:none;z-index:10;box-shadow:0 2px 12px rgba(0,0,0,0.5);will-change:transform;pointer-events:auto}
+.corner-handle::after{content:'';position:absolute;inset:-16px;border-radius:50%}
+.corner-handle.active{background:white;border-color:var(--accent)}
+.edge-handle{position:absolute;width:28px;height:28px;border-radius:50%;background:rgba(0,212,170,0.6);border:2px solid white;touch-action:none;z-index:9;box-shadow:0 2px 8px rgba(0,0,0,0.4);will-change:transform;pointer-events:auto}
+.edge-handle::after{content:'';position:absolute;inset:-14px;border-radius:50%}
+.edge-handle.active{background:white;border-color:var(--accent)}
+.crop-edge-line{position:absolute;pointer-events:none;z-index:5}
+.crop-actions{padding:12px 20px;padding-bottom:max(12px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;background:var(--bg)}
+.crop-actions-row{display:flex;gap:10px}
+.crop-sensitivity{display:flex;align-items:center;gap:10px;padding:4px 0}
+.crop-sensitivity label{font-size:12px;color:var(--text2);min-width:68px;white-space:nowrap}
+.crop-sensitivity input[type=range]{flex:1;accent-color:var(--accent);height:4px}
+.enhance-header-btns{display:flex;gap:8px}
+.btn-done{padding:8px 14px;color:var(--accent);font-weight:600;font-size:14px;background:var(--surface2);border-radius:8px}
+
+/* Enhance View */
+.enhance-preview{flex:1;display:flex;align-items:center;justify-content:center;background:#000;overflow:hidden;position:relative}
+.enhance-preview canvas{max-width:100%;max-height:100%}
+.enhance-controls{padding:16px 20px;background:var(--surface)}
+.enhance-slider-row{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.enhance-slider-row label{font-size:13px;color:var(--text2);min-width:70px}
+.enhance-slider-row input[type=range]{flex:1;accent-color:var(--accent);height:4px}
+.enhance-modes{display:flex;gap:8px;margin-bottom:16px}
+.mode-btn{padding:10px 16px;border-radius:10px;background:var(--surface2);color:var(--text2);font-size:13px;font-weight:600;transition:all .15s}
+.mode-btn.active{background:var(--accent);color:var(--bg)}
+
+/* Processing overlay */
+.processing{position:fixed;inset:0;background:rgba(11,17,32,0.92);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(8px)}
+.processing.active{display:flex}
+.processing .spinner{width:48px;height:48px;border:3px solid var(--surface3);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:20px}
+.processing p{color:var(--text);font-size:15px;font-weight:500}
+.processing .progress-text{color:var(--text2);font-size:13px;margin-top:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Export/Title Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(11,17,32,0.9);display:none;align-items:flex-end;justify-content:center;z-index:100;backdrop-filter:blur(4px)}
+.modal-overlay.active{display:flex}
+.modal{background:var(--surface);border-radius:20px 20px 0 0;padding:24px 20px;padding-bottom:max(24px,env(safe-area-inset-bottom));width:100%;max-width:500px}
+.modal h3{font-size:18px;font-weight:700;margin-bottom:16px}
+.modal input[type=text]{width:100%;padding:14px 16px;border-radius:10px;border:2px solid var(--surface3);background:var(--bg);color:var(--text);font-size:15px;font-family:inherit;outline:none;transition:border-color .2s}
+.modal input[type=text]:focus{border-color:var(--accent)}
+.modal .modal-actions{display:flex;gap:12px;margin-top:20px}
+.modal .ocr-preview{background:var(--bg);border-radius:10px;padding:12px;margin:12px 0;max-height:120px;overflow-y:auto;font-size:12px;color:var(--text2);line-height:1.5}
+.badge{display:inline-block;background:var(--surface3);color:var(--accent);font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;margin-bottom:12px}
+
+/* Settings */
+.settings-btn{background:none;color:var(--text2);width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:10px;transition:background .15s}
+.settings-btn:active{background:var(--surface2)}
+.settings-scroll{flex:1;overflow-y:auto;padding:20px;padding-bottom:100px}
+.settings-section{margin-bottom:28px}
+.settings-section h3{font-size:14px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:14px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--surface2)}
+.setting-row:last-child{border-bottom:none}
+.setting-label{font-size:14px;font-weight:500}
+.setting-desc{font-size:12px;color:var(--text2);margin-top:3px;line-height:1.4}
+.toggle{position:relative;width:48px;height:28px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{position:absolute;inset:0;background:var(--surface3);border-radius:14px;transition:background .2s;cursor:pointer}
+.toggle .slider::before{content:'';position:absolute;width:22px;height:22px;left:3px;bottom:3px;background:white;border-radius:50%;transition:transform .2s}
+.toggle input:checked+.slider{background:var(--accent)}
+.toggle input:checked+.slider::before{transform:translateX(20px)}
+.setting-input{width:100%;padding:12px 14px;border-radius:10px;border:2px solid var(--surface3);background:var(--bg);color:var(--text);font-size:14px;font-family:inherit;outline:none;transition:border-color .2s;margin-top:8px}
+.setting-input:focus{border-color:var(--accent)}
+textarea.setting-input{min-height:80px;resize:vertical;line-height:1.5}
+.setting-input-group{padding:10px 0}
+.placeholder-help{font-size:11px;color:var(--text2);margin-top:6px;line-height:1.6}
+.placeholder-help code{background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:11px;color:var(--accent)}
+.llm-status{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;background:var(--bg);margin-top:10px;font-size:13px}
+.llm-status .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.llm-status .dot.off{background:var(--text2)}
+.llm-status .dot.loading{background:var(--warn);animation:pulse 1s infinite}
+.llm-status .dot.ready{background:var(--accent)}
+.llm-status .dot.error{background:var(--danger)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.btn-sm{padding:8px 16px;font-size:13px;border-radius:8px}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <!-- PAGES VIEW -->
+  <div class="view active" id="view-pages">
+    <div class="pages-header">
+      <div><h1>DocScan</h1><div class="subtitle" id="page-count">No pages scanned</div></div>
+      <button class="settings-btn" onclick="showView('settings')" title="Settings">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+    <div id="pages-content"></div>
+    <div class="bottom-bar">
+      <button class="btn btn-secondary" id="btn-export" disabled onclick="startExport()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Export PDF
+      </button>
+      <button class="btn btn-primary" id="btn-scan" onclick="openCamera()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Scan Page
+      </button>
+    </div>
+  </div>
+
+  <!-- CAMERA VIEW -->
+  <div class="view camera-view" id="view-camera">
+    <div class="camera-container">
+      <video id="cam-video" autoplay playsinline muted></video>
+      <canvas class="overlay" id="cam-overlay"></canvas>
+      <div class="camera-hint">Position document within frame</div>
+      <div class="flash" id="flash"></div>
+    </div>
+    <div class="camera-controls">
+      <button class="cam-back-btn" onclick="closeCamera()">✕</button>
+      <button class="capture-btn" id="btn-capture" onclick="capturePhoto()"></button>
+      <div style="width:48px"></div>
+    </div>
+  </div>
+
+  <!-- CROP VIEW -->
+  <div class="view" id="view-crop">
+    <div class="crop-header">
+      <button class="btn" style="padding:8px 0;color:var(--text2)" onclick="backFromCrop()">← Back</button>
+      <h2>Adjust Borders</h2>
+      <button class="btn" style="padding:8px 0;color:var(--accent)" onclick="applyCrop()">Apply →</button>
+    </div>
+    <div class="crop-canvas-wrap" id="crop-wrap">
+      <div class="crop-canvas-inner" id="crop-inner">
+        <canvas id="crop-canvas"></canvas>
+        <canvas id="crop-overlay"></canvas>
+      </div>
+    </div>
+    <div class="crop-actions">
+      <div class="crop-sensitivity">
+        <label>Sensitivity</label>
+        <input type="range" id="sl-detect-sens" min="5" max="95" value="50" oninput="onSensitivityChange()">
+      </div>
+      <div class="crop-actions-row">
+        <button class="btn btn-secondary" onclick="rotateImage()" style="flex:0 0 auto;padding:14px 16px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        </button>
+        <button class="btn btn-secondary" onclick="autoDetectCorners()" style="flex:1">Auto-Detect</button>
+        <button class="btn btn-secondary" onclick="resetCorners()" style="flex:0.5">Full Page</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ENHANCE VIEW -->
+  <div class="view" id="view-enhance">
+    <div class="crop-header">
+      <button class="btn" style="padding:8px 0;color:var(--text2)" onclick="backFromEnhance()">← Back</button>
+      <h2>Enhance</h2>
+      <div class="enhance-header-btns">
+        <button class="btn btn-done" onclick="finishDone()">Done</button>
+        <button class="btn" style="padding:8px 0;color:var(--accent)" onclick="addPage()">Add Page →</button>
+      </div>
+    </div>
+    <div class="enhance-preview"><canvas id="enhance-canvas"></canvas></div>
+    <div class="enhance-controls">
+      <div class="enhance-modes">
+        <button class="mode-btn active" data-mode="bw" onclick="setEnhanceMode('bw',this)">B&W Document</button>
+        <button class="mode-btn" data-mode="color" onclick="setEnhanceMode('color',this)">Color</button>
+        <button class="mode-btn" data-mode="original" onclick="setEnhanceMode('original',this)">Original</button>
+      </div>
+      <div class="enhance-slider-row" id="bw-strength-row"><label>BW Strength</label><input type="range" id="sl-bw-strength" min="0" max="100" value="70" oninput="updateEnhance()"></div>
+      <div class="enhance-slider-row"><label>Brightness</label><input type="range" id="sl-bright" min="-50" max="50" value="0" oninput="updateEnhance()"></div>
+      <div class="enhance-slider-row"><label>Contrast</label><input type="range" id="sl-contrast" min="-50" max="50" value="10" oninput="updateEnhance()"></div>
+    </div>
+  </div>
+
+  <!-- SETTINGS VIEW -->
+  <div class="view" id="view-settings">
+    <div class="crop-header">
+      <button class="btn" style="padding:8px 0;color:var(--text2)" onclick="showView('pages')">← Back</button>
+      <h2>Settings</h2>
+      <div style="width:60px"></div>
+    </div>
+    <div class="settings-scroll">
+      <div class="settings-section">
+        <h3>Filename Format</h3>
+        <div class="setting-input-group">
+          <input type="text" class="setting-input" id="set-filename-fmt" value="" placeholder="{yyyy}_{mm}_{dd} - {title}">
+          <div class="placeholder-help">
+            <code>{yyyy}</code> year &nbsp; <code>{mm}</code> month &nbsp; <code>{dd}</code> day &nbsp; <code>{title}</code> document title &nbsp; <code>{n}</code> page count<br>
+            Extension <code>.pdf</code> is added automatically.<br>
+            Default: <code>{yyyy}_{mm}_{dd} - {title}</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>AI Title Generation</h3>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Use LLM for titles</div>
+            <div class="setting-desc">Download a small AI model (~150 MB) to automatically suggest document titles from OCR text.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-llm-enabled" onchange="onLlmToggle()">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div id="llm-options" style="display:none">
+          <div class="llm-status" id="llm-status">
+            <span class="dot off" id="llm-dot"></span>
+            <span id="llm-status-text">Model not loaded</span>
+            <button class="btn btn-sm btn-secondary" id="llm-load-btn" onclick="loadLLM()" style="margin-left:auto">Load Model</button>
+          </div>
+          <div class="setting-input-group">
+            <label class="setting-label" style="font-size:13px;display:block;margin-bottom:4px">Model</label>
+            <input type="text" class="setting-input" id="set-llm-model" value="" placeholder="onnx-community/Qwen2.5-0.5B-Instruct">
+            <div class="placeholder-help">HuggingFace ONNX model ID. Tries q4 → q8 → default quantization.<br>
+              Alternatives: <code>onnx-community/SmolLM2-360M-Instruct</code> (smaller), <code>onnx-community/Phi-3.5-mini-instruct</code> (better, larger). Change requires reload.</div>
+          </div>
+          <div class="setting-input-group">
+            <label class="setting-label" style="font-size:13px;display:block;margin-bottom:4px">System Prompt</label>
+            <textarea class="setting-input" id="set-llm-prompt" rows="4" placeholder=""></textarea>
+            <div class="placeholder-help">Instructions for the AI when generating a document title.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>OCR</h3>
+        <div class="setting-input-group">
+          <label class="setting-label" style="font-size:13px;display:block;margin-bottom:4px">Languages</label>
+          <input type="text" class="setting-input" id="set-ocr-langs" value="" placeholder="eng+deu">
+          <div class="placeholder-help">Tesseract language codes, joined with <code>+</code>. Common: <code>eng</code> <code>deu</code> <code>fra</code> <code>spa</code></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Processing Overlay -->
+  <div class="processing" id="processing">
+    <div class="spinner"></div>
+    <p id="proc-msg">Processing...</p>
+    <div class="progress-text" id="proc-detail"></div>
+  </div>
+
+  <!-- Export Modal -->
+  <div class="modal-overlay" id="export-modal">
+    <div class="modal">
+      <h3>Export as PDF</h3>
+      <div class="badge" id="ocr-badge">OCR Complete</div>
+      <label style="font-size:13px;color:var(--text2);display:block;margin-bottom:8px">Document Title</label>
+      <input type="text" id="pdf-title" placeholder="Scanned Document" oninput="updateFilenamePreview()">
+      <div style="margin-top:8px;font-size:12px;color:var(--text2)">
+        Filename: <span id="filename-preview" style="color:var(--accent);word-break:break-all"></span>
+      </div>
+      <div class="ocr-preview" id="ocr-preview-text"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeExportModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="downloadPDF()">Download PDF</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== APP STATE =====
+const state = {
+  pages: [],           // {id, original: HTMLCanvasElement, cropped: canvas, enhanced: canvas, ocrText: string}
+  capturedImage: null,  // HTMLCanvasElement
+  corners: [{x:0,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}], // TL, TR, BR, BL
+  cropDisplayScale: 1,
+  cropOffsetX: 0,
+  cropOffsetY: 0,
+  enhanceMode: 'bw',
+  croppedForEnhance: null,
+  stream: null,
+  animFrameId: null,
+};
+
+// ===== VIEW MANAGEMENT =====
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + id).classList.add('active');
+}
+
+function renderPages() {
+  const cont = document.getElementById('pages-content');
+  const countEl = document.getElementById('page-count');
+  const expBtn = document.getElementById('btn-export');
+  if (state.pages.length === 0) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">📄</div><p>Tap <strong>Scan Page</strong> to capture your first document page.</p></div>';
+    cont.className = 'empty-state-wrap';
+    cont.style.cssText = 'flex:1;display:flex';
+    countEl.textContent = 'No pages scanned';
+    expBtn.disabled = true;
+  } else {
+    cont.className = 'pages-grid';
+    cont.style.cssText = '';
+    countEl.textContent = state.pages.length + ' page' + (state.pages.length > 1 ? 's' : '');
+    expBtn.disabled = false;
+    cont.innerHTML = state.pages.map((p, i) => {
+      const dataUrl = p.enhanced.toDataURL('image/jpeg', 0.6);
+      return `<div class="page-card"><img src="${dataUrl}"><span class="page-num">${i+1}</span><button class="delete-btn" onclick="deletePage(${i})">✕</button></div>`;
+    }).join('');
+  }
+}
+
+function deletePage(i) {
+  state.pages.splice(i, 1);
+  renderPages();
+}
+
+// ===== CAMERA =====
+async function openCamera() {
+  // file:// protocol never allows getUserMedia — skip straight to file input
+  if (location.protocol === 'file:' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    triggerFileFallback();
+    return;
+  }
+  showView('camera');
+  try {
+    state.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    const video = document.getElementById('cam-video');
+    video.srcObject = state.stream;
+    await video.play();
+    startOverlayLoop();
+  } catch (e) {
+    console.warn('getUserMedia failed, falling back to file input:', e.message);
+    showView('pages');
+    triggerFileFallback();
+  }
+}
+
+function triggerFileFallback() {
+  document.getElementById('file-fallback').click();
+}
+
+function closeCamera() {
+  stopCamera();
+  showView('pages');
+}
+
+function stopCamera() {
+  if (state.animFrameId) { cancelAnimationFrame(state.animFrameId); state.animFrameId = null; }
+  if (state.stream) { state.stream.getTracks().forEach(t => t.stop()); state.stream = null; }
+}
+
+function startOverlayLoop() {
+  const video = document.getElementById('cam-video');
+  const overlay = document.getElementById('cam-overlay');
+  const ctx = overlay.getContext('2d');
+  function loop() {
+    if (!state.stream) return;
+    overlay.width = video.videoWidth;
+    overlay.height = video.videoHeight;
+    // Draw faint guide rectangle
+    const margin = 0.08;
+    const x1 = overlay.width * margin, y1 = overlay.height * margin;
+    const x2 = overlay.width * (1 - margin), y2 = overlay.height * (1 - margin);
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    ctx.strokeStyle = 'rgba(0,212,170,0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([12, 8]);
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    ctx.setLineDash([]);
+    state.animFrameId = requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+function capturePhoto() {
+  const video = document.getElementById('cam-video');
+  const flash = document.getElementById('flash');
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 150);
+
+  const c = document.createElement('canvas');
+  c.width = video.videoWidth;
+  c.height = video.videoHeight;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+  state.capturedImage = c;
+  stopCamera();
+  openCropView();
+}
+
+// ===== BORDER DETECTION: Canny + Hough Transform =====
+function detectBorders(srcCanvas, sensitivity) {
+  if (sensitivity === undefined) sensitivity = 50;
+  const sens = sensitivity / 100; // 0..1
+
+  // Downscale for speed
+  const targetW = 320;
+  const scale = targetW / srcCanvas.width;
+  const w = targetW;
+  const h = Math.round(srcCanvas.height * scale);
+  const small = document.createElement('canvas');
+  small.width = w; small.height = h;
+  const sctx = small.getContext('2d');
+  sctx.drawImage(srcCanvas, 0, 0, w, h);
+  const imgData = sctx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+
+  // Grayscale
+  const gray = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    gray[i] = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
+  }
+
+  // 1. Gaussian blur (sigma scaled by sensitivity: less blur at high sens)
+  const sigma = 2.0 - sens * 0.8; // 2.0..1.2
+  const blurred = gaussBlur(gray, w, h, sigma);
+
+  // 2. Sobel gradients (magnitude + direction)
+  const mag = new Float32Array(w * h);
+  const dir = new Float32Array(w * h);
+  let maxMag = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const idx = y * w + x;
+      const gx = -blurred[idx-w-1] + blurred[idx-w+1] - 2*blurred[idx-1] + 2*blurred[idx+1] - blurred[idx+w-1] + blurred[idx+w+1];
+      const gy = -blurred[idx-w-1] - 2*blurred[idx-w] - blurred[idx-w+1] + blurred[idx+w-1] + 2*blurred[idx+w] + blurred[idx+w+1];
+      mag[idx] = Math.sqrt(gx*gx + gy*gy);
+      dir[idx] = Math.atan2(gy, gx);
+      if (mag[idx] > maxMag) maxMag = mag[idx];
+    }
+  }
+
+  // 3. Non-maximum suppression (thin edges to 1px ridges)
+  const nms = new Float32Array(w * h);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const idx = y * w + x;
+      const m = mag[idx];
+      if (m === 0) continue;
+      // Quantize direction to 4 cases: 0°, 45°, 90°, 135°
+      let angle = dir[idx] * 180 / Math.PI;
+      if (angle < 0) angle += 180;
+      let n1, n2;
+      if (angle < 22.5 || angle >= 157.5) { n1 = mag[idx-1]; n2 = mag[idx+1]; }
+      else if (angle < 67.5)  { n1 = mag[idx-w+1]; n2 = mag[idx+w-1]; }
+      else if (angle < 112.5) { n1 = mag[idx-w]; n2 = mag[idx+w]; }
+      else                    { n1 = mag[idx-w-1]; n2 = mag[idx+w+1]; }
+      nms[idx] = (m >= n1 && m >= n2) ? m : 0;
+    }
+  }
+
+  // 4. Hysteresis thresholding (sensitivity controls thresholds)
+  const highT = maxMag * (0.20 - sens * 0.12); // 0.20..0.08
+  const lowT = highT * 0.4;
+  const edge = new Uint8Array(w * h); // 0=no, 1=weak, 2=strong
+  for (let i = 0; i < w * h; i++) {
+    if (nms[i] >= highT) edge[i] = 2;
+    else if (nms[i] >= lowT) edge[i] = 1;
+  }
+  // Connect weak edges to strong edges via flood fill
+  const finalEdge = new Uint8Array(w * h);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      if (edge[y*w+x] === 2) hysteresisFlood(edge, finalEdge, w, h, x, y);
+    }
+  }
+
+  // 5. Hough line transform
+  const lines = houghLines(finalEdge, w, h, sens);
+
+  // 6. Find best quadrilateral from detected lines
+  const quad = findBestQuad(lines, w, h, finalEdge);
+
+  if (quad) {
+    // Sort corners: TL, TR, BR, BL
+    const sorted = sortCorners(quad);
+    return sorted.map(c => ({ x: c.x / scale, y: c.y / scale }));
+  }
+
+  // Fallback: default margins
+  const m = 0.05;
+  return [
+    {x: srcCanvas.width*m, y: srcCanvas.height*m},
+    {x: srcCanvas.width*(1-m), y: srcCanvas.height*m},
+    {x: srcCanvas.width*(1-m), y: srcCanvas.height*(1-m)},
+    {x: srcCanvas.width*m, y: srcCanvas.height*(1-m)}
+  ];
+}
+
+function hysteresisFlood(edge, out, w, h, sx, sy) {
+  const stack = [[sx, sy]];
+  while (stack.length > 0) {
+    const [x, y] = stack.pop();
+    const idx = y * w + x;
+    if (x < 1 || x >= w-1 || y < 1 || y >= h-1) continue;
+    if (out[idx]) continue;
+    if (edge[idx] === 0) continue;
+    out[idx] = 1;
+    if (edge[idx] === 2 || edge[idx] === 1) {
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++)
+          if (dx !== 0 || dy !== 0) stack.push([x+dx, y+dy]);
+    }
+  }
+}
+
+function houghLines(edges, w, h, sens) {
+  // Parameterized by (rho, theta) where rho = x*cos(theta) + y*sin(theta)
+  const thetaSteps = 180;
+  const dTheta = Math.PI / thetaSteps;
+  const diagLen = Math.sqrt(w*w + h*h);
+  const rhoMax = Math.ceil(diagLen);
+  const rhoSteps = rhoMax * 2;
+
+  // Precompute sin/cos lookup
+  const cosT = new Float32Array(thetaSteps);
+  const sinT = new Float32Array(thetaSteps);
+  for (let t = 0; t < thetaSteps; t++) {
+    const theta = t * dTheta;
+    cosT[t] = Math.cos(theta);
+    sinT[t] = Math.sin(theta);
+  }
+
+  // Accumulator
+  const acc = new Int32Array(thetaSteps * rhoSteps);
+
+  // Vote
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!edges[y * w + x]) continue;
+      for (let t = 0; t < thetaSteps; t++) {
+        const rho = Math.round(x * cosT[t] + y * sinT[t]) + rhoMax;
+        if (rho >= 0 && rho < rhoSteps) {
+          acc[t * rhoSteps + rho]++;
+        }
+      }
+    }
+  }
+
+  // Find peaks: local maxima above threshold
+  // Threshold scales with sensitivity and image size
+  const minVotes = Math.max(10, Math.round(Math.min(w, h) * (0.25 - sens * 0.15))); // 25%..10% of dimension
+  const peaks = [];
+
+  for (let t = 0; t < thetaSteps; t++) {
+    for (let r = 0; r < rhoSteps; r++) {
+      const v = acc[t * rhoSteps + r];
+      if (v < minVotes) continue;
+      // Check local maximum in 5x5 neighborhood
+      let isMax = true;
+      for (let dt = -2; dt <= 2 && isMax; dt++) {
+        for (let dr = -2; dr <= 2 && isMax; dr++) {
+          if (dt === 0 && dr === 0) continue;
+          const nt = t + dt, nr = r + dr;
+          if (nt >= 0 && nt < thetaSteps && nr >= 0 && nr < rhoSteps) {
+            if (acc[nt * rhoSteps + nr] > v) isMax = false;
+          }
+        }
+      }
+      if (isMax) {
+        peaks.push({ theta: t * dTheta, rho: r - rhoMax, votes: v });
+      }
+    }
+  }
+
+  // Sort by votes, take top N
+  peaks.sort((a, b) => b.votes - a.votes);
+  return peaks.slice(0, 30);
+}
+
+function findBestQuad(lines, w, h, edges) {
+  if (lines.length < 4) return null;
+
+  // Classify lines into roughly horizontal (theta near 90°) and roughly vertical (theta near 0° or 180°)
+  const horizLines = [];
+  const vertLines = [];
+  const tolerance = 35 * Math.PI / 180; // 35 degrees tolerance
+
+  for (const line of lines) {
+    const t = line.theta;
+    // Horizontal: theta near π/2 (90°)
+    if (Math.abs(t - Math.PI/2) < tolerance) {
+      horizLines.push(line);
+    }
+    // Vertical: theta near 0 or π
+    else if (t < tolerance || t > Math.PI - tolerance) {
+      vertLines.push(line);
+    }
+    // Also include diagonal lines (documents can be tilted) — classify by which axis they're closer to
+    else if (Math.abs(t - Math.PI/2) < Math.PI/4) {
+      horizLines.push(line);
+    } else {
+      vertLines.push(line);
+    }
+  }
+
+  if (horizLines.length < 2 || vertLines.length < 2) return null;
+
+  // Take top candidates by votes
+  const topH = horizLines.slice(0, 8);
+  const topV = vertLines.slice(0, 8);
+
+  // Try all combinations of 2 horizontal + 2 vertical lines
+  let bestQuad = null, bestScore = -Infinity;
+
+  for (let hi = 0; hi < topH.length - 1; hi++) {
+    for (let hj = hi + 1; hj < topH.length; hj++) {
+      for (let vi = 0; vi < topV.length - 1; vi++) {
+        for (let vj = vi + 1; vj < topV.length; vj++) {
+          const h1 = topH[hi], h2 = topH[hj];
+          const v1 = topV[vi], v2 = topV[vj];
+
+          // Get 4 intersection points
+          const p1 = houghLineIntersect(h1, v1);
+          const p2 = houghLineIntersect(h1, v2);
+          const p3 = houghLineIntersect(h2, v2);
+          const p4 = houghLineIntersect(h2, v1);
+
+          if (!p1 || !p2 || !p3 || !p4) continue;
+
+          const quad = [p1, p2, p3, p4];
+
+          // Check all points are within image bounds (with some tolerance)
+          const margin = -20;
+          const allInBounds = quad.every(p =>
+            p.x >= margin && p.x <= w - margin && p.y >= margin && p.y <= h - margin
+          );
+          if (!allInBounds) continue;
+
+          // Must be convex
+          if (!isConvex(quad)) continue;
+
+          // Score the quad
+          const area = quadArea(quad);
+          const imgArea = w * h;
+
+          // Skip if too small or too large
+          if (area < imgArea * 0.08 || area > imgArea * 0.98) continue;
+
+          // Score components:
+          // 1. Area (prefer larger — document should fill most of the frame)
+          const areaScore = area / imgArea;
+
+          // 2. Aspect ratio (prefer reasonable document ratios)
+          const sorted = sortCorners(quad);
+          const widthTop = Math.hypot(sorted[1].x - sorted[0].x, sorted[1].y - sorted[0].y);
+          const widthBot = Math.hypot(sorted[2].x - sorted[3].x, sorted[2].y - sorted[3].y);
+          const heightL = Math.hypot(sorted[3].x - sorted[0].x, sorted[3].y - sorted[0].y);
+          const heightR = Math.hypot(sorted[2].x - sorted[1].x, sorted[2].y - sorted[1].y);
+          const avgW = (widthTop + widthBot) / 2;
+          const avgH = (heightL + heightR) / 2;
+          const aspect = Math.max(avgW, avgH) / Math.max(1, Math.min(avgW, avgH));
+          const aspectScore = aspect < 3 ? 1.0 : 1.0 / aspect; // Penalize very extreme ratios
+
+          // 3. Parallelism (opposite sides should be similar length)
+          const paraScore = 1 - (
+            Math.abs(widthTop - widthBot) / Math.max(widthTop, widthBot, 1) +
+            Math.abs(heightL - heightR) / Math.max(heightL, heightR, 1)
+          ) / 2;
+
+          // 4. Hough votes (prefer lines with strong edge support)
+          const voteScore = (h1.votes + h2.votes + v1.votes + v2.votes);
+          const maxPossibleVotes = Math.max(w, h) * 4;
+          const normalizedVotes = Math.min(1, voteScore / maxPossibleVotes);
+
+          const score = areaScore * 3 + aspectScore + paraScore * 2 + normalizedVotes * 2;
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestQuad = quad;
+          }
+        }
+      }
+    }
+  }
+
+  return bestQuad;
+}
+
+function houghLineIntersect(l1, l2) {
+  // Lines in (theta, rho) form: x*cos(t) + y*sin(t) = rho
+  const cos1 = Math.cos(l1.theta), sin1 = Math.sin(l1.theta);
+  const cos2 = Math.cos(l2.theta), sin2 = Math.sin(l2.theta);
+  const det = cos1 * sin2 - cos2 * sin1;
+  if (Math.abs(det) < 1e-8) return null;
+  return {
+    x: (l1.rho * sin2 - l2.rho * sin1) / det,
+    y: (cos1 * l2.rho - cos2 * l1.rho) / det
+  };
+}
+
+function sortCorners(pts) {
+  // Sort 4 points into TL, TR, BR, BL order
+  const cx = pts.reduce((s, p) => s + p.x, 0) / 4;
+  const cy = pts.reduce((s, p) => s + p.y, 0) / 4;
+  const sorted = pts.map(p => ({ ...p, angle: Math.atan2(p.y - cy, p.x - cx) }));
+  sorted.sort((a, b) => a.angle - b.angle);
+  // atan2 gives: right=0, bottom=π/2, left=±π, top=-π/2
+  // We want TL first. Find the point in the top-left quadrant
+  // Approach: sort by angle, then rotate so TL is first
+  // TL has angle near -3π/4 (upper-left), so find the index closest to that
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  const targetAngle = -Math.PI * 0.75;
+  for (let i = 0; i < 4; i++) {
+    let d = Math.abs(sorted[i].angle - targetAngle);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+  const result = [];
+  for (let i = 0; i < 4; i++) {
+    result.push(sorted[(bestIdx + i) % 4]);
+  }
+  return result;
+}
+
+function quadArea(pts) {
+  let a = 0;
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  return Math.abs(a) / 2;
+}
+
+function isConvex(pts) {
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = pts[i], b = pts[(i+1)%4], c = pts[(i+2)%4];
+    const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+    if (cross !== 0) {
+      const s = cross > 0 ? 1 : -1;
+      if (sign === 0) sign = s;
+      else if (sign !== s) return false;
+    }
+  }
+  return true;
+}
+
+function gaussBlur(src, w, h, sigma) {
+  const ks = Math.ceil(sigma * 3) | 1;
+  const half = Math.floor(ks / 2);
+  const kernel = [];
+  let sum = 0;
+  for (let i = -half; i <= half; i++) {
+    const v = Math.exp(-(i*i)/(2*sigma*sigma));
+    kernel.push(v); sum += v;
+  }
+  for (let i = 0; i < kernel.length; i++) kernel[i] /= sum;
+  const tmp = new Float32Array(w * h);
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = 0;
+      for (let k = -half; k <= half; k++) {
+        const sx = Math.min(w-1, Math.max(0, x+k));
+        v += src[y*w+sx] * kernel[k+half];
+      }
+      tmp[y*w+x] = v;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = 0;
+      for (let k = -half; k <= half; k++) {
+        const sy = Math.min(h-1, Math.max(0, y+k));
+        v += tmp[sy*w+x] * kernel[k+half];
+      }
+      out[y*w+x] = v;
+    }
+  }
+  return out;
+}
+
+// ===== CROP VIEW (rewritten for smooth interaction) =====
+let cropState = {
+  activeHandle: -1,
+  handles: [],        // DOM elements, created once
+  imgCanvas: null,    // background image canvas (drawn once)
+  initialized: false,
+  fingerOffsetX: 0,   // offset between finger and handle center at grab start
+  fingerOffsetY: 0,
+};
+
+function openCropView() {
+  showView('crop');
+  cropState.initialized = false;
+  // Wait one frame for layout to settle
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const sens = parseInt(document.getElementById('sl-detect-sens').value);
+      const corners = detectBorders(state.capturedImage, sens);
+      state.corners = corners;
+      initCropView();
+    });
+  });
+}
+
+function initCropView() {
+  const wrap = document.getElementById('crop-wrap');
+  const inner = document.getElementById('crop-inner');
+  const canvas = document.getElementById('crop-canvas');
+  const overlay = document.getElementById('crop-overlay');
+  const src = state.capturedImage;
+
+  const wrapRect = wrap.getBoundingClientRect();
+  const pad = 8;
+  const availW = wrapRect.width - pad * 2;
+  const availH = wrapRect.height - pad * 2;
+  const displayScale = Math.min(availW / src.width, availH / src.height);
+  const cw = Math.round(src.width * displayScale);
+  const ch = Math.round(src.height * displayScale);
+
+  // Size the inner container and canvases
+  inner.style.width = cw + 'px';
+  inner.style.height = ch + 'px';
+
+  canvas.width = cw;
+  canvas.height = ch;
+  overlay.width = cw;
+  overlay.height = ch;
+  overlay.style.width = cw + 'px';
+  overlay.style.height = ch + 'px';
+
+  // Draw image once on background canvas
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(src, 0, 0, cw, ch);
+
+  state.cropDisplayScale = displayScale;
+
+  // Create handles once: 4 corners + 4 edge midpoints
+  inner.querySelectorAll('.corner-handle,.edge-handle').forEach(h => h.remove());
+  cropState.handles = [];
+  cropState.edgeHandles = [];
+  for (let i = 0; i < 4; i++) {
+    const h = document.createElement('div');
+    h.className = 'corner-handle';
+    h.dataset.index = i;
+    inner.appendChild(h);
+    cropState.handles.push(h);
+  }
+  // Edge midpoints: edge 0 = TL→TR (top), 1 = TR→BR (right), 2 = BR→BL (bottom), 3 = BL→TL (left)
+  for (let i = 0; i < 4; i++) {
+    const h = document.createElement('div');
+    h.className = 'edge-handle';
+    h.dataset.edgeIndex = i;
+    inner.appendChild(h);
+    cropState.edgeHandles.push(h);
+  }
+
+  drawCropOverlay();
+
+  if (!cropState.initialized) {
+    setupCropTouch();
+    cropState.initialized = true;
+  }
+}
+
+function drawCropOverlay() {
+  const overlay = document.getElementById('crop-overlay');
+  const ctx = overlay.getContext('2d');
+  const w = overlay.width, h = overlay.height;
+  const scale = state.cropDisplayScale;
+
+  ctx.clearRect(0, 0, w, h);
+
+  const pts = state.corners.map(c => ({ x: c.x * scale, y: c.y * scale }));
+
+  // Semi-transparent dark overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, w, h);
+
+  // Cut out the selected quad
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // Draw quad border
+  ctx.strokeStyle = '#00d4aa';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+  ctx.stroke();
+
+  // Draw edge midpoint dashes for visual guidance
+  ctx.strokeStyle = 'rgba(0,212,170,0.4)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  for (let i = 0; i < 4; i++) {
+    const a = pts[i], b = pts[(i+1)%4];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    // Short perpendicular tick at midpoint
+    ctx.beginPath();
+    ctx.arc(mx, my, 4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Position corner handles via CSS transform
+  const inner = document.getElementById('crop-inner');
+  for (let i = 0; i < 4; i++) {
+    const handle = cropState.handles[i];
+    if (handle) {
+      handle.style.transform = `translate(${pts[i].x - 18}px, ${pts[i].y - 18}px)`;
+      handle.style.left = '0';
+      handle.style.top = '0';
+    }
+  }
+
+  // Position edge midpoint handles
+  // edges: 0=TL→TR, 1=TR→BR, 2=BR→BL, 3=BL→TL
+  for (let i = 0; i < 4; i++) {
+    const handle = cropState.edgeHandles[i];
+    if (handle) {
+      const a = pts[i], b = pts[(i + 1) % 4];
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      handle.style.transform = `translate(${mx - 14}px, ${my - 14}px)`;
+      handle.style.left = '0';
+      handle.style.top = '0';
+    }
+  }
+}
+
+function setupCropTouch() {
+  const inner = document.getElementById('crop-inner');
+
+  function findClosestHandle(clientX, clientY) {
+    const rect = inner.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const scale = state.cropDisplayScale;
+    let best = -1, bestDist = 60, bestType = 'corner';
+
+    // Check corner handles
+    for (let i = 0; i < 4; i++) {
+      const hx = state.corners[i].x * scale;
+      const hy = state.corners[i].y * scale;
+      const d = Math.hypot(px - hx, py - hy);
+      if (d < bestDist) { bestDist = d; best = i; bestType = 'corner'; }
+    }
+    // Check edge midpoint handles
+    for (let i = 0; i < 4; i++) {
+      const a = state.corners[i], b = state.corners[(i+1)%4];
+      const mx = (a.x + b.x) / 2 * scale;
+      const my = (a.y + b.y) / 2 * scale;
+      const d = Math.hypot(px - mx, py - my);
+      if (d < bestDist) { bestDist = d; best = i; bestType = 'edge'; }
+    }
+    return { index: best, type: bestType };
+  }
+
+  const onStart = (e) => {
+    const touch = e.touches ? e.touches[0] : e;
+    const hit = findClosestHandle(touch.clientX, touch.clientY);
+    if (hit.index >= 0) {
+      cropState.activeHandle = hit.index;
+      cropState.activeType = hit.type;
+      const rect = inner.getBoundingClientRect();
+      const scale = state.cropDisplayScale;
+
+      if (hit.type === 'corner') {
+        cropState.fingerOffsetX = (touch.clientX - rect.left) - state.corners[hit.index].x * scale;
+        cropState.fingerOffsetY = (touch.clientY - rect.top) - state.corners[hit.index].y * scale;
+        cropState.handles[hit.index].classList.add('active');
+      } else {
+        // Edge: store initial finger position and initial corner positions for the two endpoints
+        const a = hit.index, b = (hit.index + 1) % 4;
+        cropState.dragStartX = (touch.clientX - rect.left) / scale;
+        cropState.dragStartY = (touch.clientY - rect.top) / scale;
+        cropState.dragStartCornerA = { ...state.corners[a] };
+        cropState.dragStartCornerB = { ...state.corners[b] };
+        cropState.edgeHandles[hit.index].classList.add('active');
+      }
+      e.preventDefault();
+    }
+  };
+
+  const onMove = (e) => {
+    if (cropState.activeHandle < 0) return;
+    e.preventDefault();
+    const touch = e.touches ? e.touches[0] : e;
+    const rect = inner.getBoundingClientRect();
+    const scale = state.cropDisplayScale;
+    const imgW = state.capturedImage.width;
+    const imgH = state.capturedImage.height;
+
+    if (cropState.activeType === 'corner') {
+      const imgX = (touch.clientX - rect.left - cropState.fingerOffsetX) / scale;
+      const imgY = (touch.clientY - rect.top - cropState.fingerOffsetY) / scale;
+      state.corners[cropState.activeHandle] = {
+        x: Math.max(0, Math.min(imgW, imgX)),
+        y: Math.max(0, Math.min(imgH, imgY))
+      };
+    } else {
+      // Edge drag: move both connected corners by the same delta
+      const curX = (touch.clientX - rect.left) / scale;
+      const curY = (touch.clientY - rect.top) / scale;
+      const dx = curX - cropState.dragStartX;
+      const dy = curY - cropState.dragStartY;
+      const a = cropState.activeHandle, b = (cropState.activeHandle + 1) % 4;
+      state.corners[a] = {
+        x: Math.max(0, Math.min(imgW, cropState.dragStartCornerA.x + dx)),
+        y: Math.max(0, Math.min(imgH, cropState.dragStartCornerA.y + dy))
+      };
+      state.corners[b] = {
+        x: Math.max(0, Math.min(imgW, cropState.dragStartCornerB.x + dx)),
+        y: Math.max(0, Math.min(imgH, cropState.dragStartCornerB.y + dy))
+      };
+    }
+    drawCropOverlay();
+  };
+
+  const onEnd = () => {
+    if (cropState.activeHandle >= 0) {
+      if (cropState.activeType === 'corner' && cropState.handles[cropState.activeHandle]) {
+        cropState.handles[cropState.activeHandle].classList.remove('active');
+      }
+      if (cropState.activeType === 'edge' && cropState.edgeHandles[cropState.activeHandle]) {
+        cropState.edgeHandles[cropState.activeHandle].classList.remove('active');
+      }
+    }
+    cropState.activeHandle = -1;
+    cropState.activeType = null;
+  };
+
+  if (!inner._cropBound) {
+    inner.addEventListener('mousedown', onStart);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    inner.addEventListener('touchstart', onStart, { passive: false });
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+    inner._cropBound = true;
+  }
+}
+
+function rotateImage() {
+  const src = state.capturedImage;
+  const rotated = document.createElement('canvas');
+  rotated.width = src.height;
+  rotated.height = src.width;
+  const ctx = rotated.getContext('2d');
+  ctx.translate(rotated.width, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(src, 0, 0);
+  state.capturedImage = rotated;
+  const sens = parseInt(document.getElementById('sl-detect-sens').value);
+  state.corners = detectBorders(rotated, sens);
+  initCropView();
+}
+
+function autoDetectCorners() {
+  const sens = parseInt(document.getElementById('sl-detect-sens').value);
+  state.corners = detectBorders(state.capturedImage, sens);
+  drawCropOverlay();
+}
+
+let sensDebounceTimer = null;
+function onSensitivityChange() {
+  // Live detection with debounce for responsiveness
+  if (sensDebounceTimer) clearTimeout(sensDebounceTimer);
+  sensDebounceTimer = setTimeout(() => {
+    const sens = parseInt(document.getElementById('sl-detect-sens').value);
+    state.corners = detectBorders(state.capturedImage, sens);
+    drawCropOverlay();
+  }, 80);
+}
+
+function resetCorners() {
+  const w = state.capturedImage.width, h = state.capturedImage.height;
+  const m = 0.01;
+  state.corners = [
+    {x: w*m, y: h*m}, {x: w*(1-m), y: h*m},
+    {x: w*(1-m), y: h*(1-m)}, {x: w*m, y: h*(1-m)}
+  ];
+  drawCropOverlay();
+}
+
+function backFromCrop() { showView('pages'); }
+
+// ===== PERSPECTIVE TRANSFORM =====
+function applyCrop() {
+  showProcessing('Applying perspective correction...');
+  setTimeout(() => {
+    const result = perspectiveTransform(state.capturedImage, state.corners);
+    state.croppedForEnhance = result;
+    hideProcessing();
+    openEnhanceView();
+  }, 50);
+}
+
+function perspectiveTransform(srcCanvas, corners) {
+  // corners: TL, TR, BR, BL in source image
+  const [tl, tr, br, bl] = corners;
+  // Compute destination dimensions from corner distances
+  const widthTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+  const widthBot = Math.hypot(br.x - bl.x, br.y - bl.y);
+  const heightLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+  const heightRight = Math.hypot(br.x - tr.x, br.y - tr.y);
+  const dstW = Math.round(Math.max(widthTop, widthBot));
+  const dstH = Math.round(Math.max(heightLeft, heightRight));
+
+  // Compute inverse homography (dst -> src)
+  const srcPts = [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y];
+  const dstPts = [0, 0, dstW, 0, dstW, dstH, 0, dstH];
+  const H = computeHomography(dstPts, srcPts); // inverse: maps dst coords to src coords
+
+  const dst = document.createElement('canvas');
+  dst.width = dstW; dst.height = dstH;
+  const dctx = dst.getContext('2d');
+  const srcCtx = srcCanvas.getContext('2d');
+  const srcData = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+  const dstData = dctx.createImageData(dstW, dstH);
+  const sd = srcData.data, dd = dstData.data;
+  const sw = srcCanvas.width, sh = srcCanvas.height;
+
+  for (let y = 0; y < dstH; y++) {
+    for (let x = 0; x < dstW; x++) {
+      const w = H[6]*x + H[7]*y + H[8];
+      const sx = (H[0]*x + H[1]*y + H[2]) / w;
+      const sy = (H[3]*x + H[4]*y + H[5]) / w;
+      if (sx >= 0 && sx < sw - 1 && sy >= 0 && sy < sh - 1) {
+        // Bilinear interpolation
+        const fx = Math.floor(sx), fy = Math.floor(sy);
+        const dx = sx - fx, dy = sy - fy;
+        const i00 = (fy * sw + fx) * 4;
+        const i10 = i00 + 4;
+        const i01 = i00 + sw * 4;
+        const i11 = i01 + 4;
+        const di = (y * dstW + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          dd[di+c] = (1-dx)*(1-dy)*sd[i00+c] + dx*(1-dy)*sd[i10+c] + (1-dx)*dy*sd[i01+c] + dx*dy*sd[i11+c];
+        }
+        dd[di+3] = 255;
+      }
+    }
+  }
+  dctx.putImageData(dstData, 0, 0);
+  return dst;
+}
+
+function computeHomography(src, dst) {
+  // src and dst are flat arrays [x0,y0,x1,y1,...x3,y3]
+  // Solve using DLT (Direct Linear Transform)
+  const A = [];
+  for (let i = 0; i < 4; i++) {
+    const sx = src[i*2], sy = src[i*2+1];
+    const dx = dst[i*2], dy = dst[i*2+1];
+    A.push([-sx, -sy, -1, 0, 0, 0, dx*sx, dx*sy, dx]);
+    A.push([0, 0, 0, -sx, -sy, -1, dy*sx, dy*sy, dy]);
+  }
+  // Solve Ah = 0 using simplified approach for 8x9 matrix
+  // We can rearrange to solve 8x8 system
+  const M = [];
+  const b = [];
+  for (let i = 0; i < 8; i++) {
+    M.push(A[i].slice(0, 8));
+    b.push(-A[i][8]);
+  }
+  const h = solveLinear8(M, b);
+  return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+}
+
+function solveLinear8(M, b) {
+  // Gaussian elimination for 8x8
+  const n = 8;
+  const aug = M.map((row, i) => [...row, b[i]]);
+  for (let col = 0; col < n; col++) {
+    let maxRow = col, maxVal = Math.abs(aug[col][col]);
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(aug[row][col]) > maxVal) { maxVal = Math.abs(aug[row][col]); maxRow = row; }
+    }
+    [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+    const pivot = aug[col][col];
+    if (Math.abs(pivot) < 1e-10) continue;
+    for (let j = col; j <= n; j++) aug[col][j] /= pivot;
+    for (let row = 0; row < n; row++) {
+      if (row === col) continue;
+      const factor = aug[row][col];
+      for (let j = col; j <= n; j++) aug[row][j] -= factor * aug[col][j];
+    }
+  }
+  return aug.map(row => row[n]);
+}
+
+// ===== ENHANCE VIEW =====
+function openEnhanceView() {
+  showView('enhance');
+  state.enhanceMode = 'bw';
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === 'bw'));
+  document.getElementById('sl-bright').value = 0;
+  document.getElementById('sl-contrast').value = 10;
+  document.getElementById('sl-bw-strength').value = 70;
+  updateBwSliderVisibility();
+  updateEnhance();
+}
+
+function setEnhanceMode(mode, btn) {
+  state.enhanceMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateBwSliderVisibility();
+  updateEnhance();
+}
+
+function updateBwSliderVisibility() {
+  document.getElementById('bw-strength-row').style.display = state.enhanceMode === 'bw' ? 'flex' : 'none';
+}
+
+let enhanceDebounce = null;
+function updateEnhance() {
+  if (enhanceDebounce) cancelAnimationFrame(enhanceDebounce);
+  enhanceDebounce = requestAnimationFrame(_doEnhance);
+}
+
+function _doEnhance() {
+  const canvas = document.getElementById('enhance-canvas');
+  const ctx = canvas.getContext('2d');
+  const src = state.croppedForEnhance;
+  canvas.width = src.width;
+  canvas.height = src.height;
+
+  const brightness = parseInt(document.getElementById('sl-bright').value);
+  const contrast = parseInt(document.getElementById('sl-contrast').value);
+  const bwStrength = parseInt(document.getElementById('sl-bw-strength').value) / 100; // 0..1
+
+  if (state.enhanceMode === 'original') {
+    ctx.drawImage(src, 0, 0);
+    applyBrightnessContrast(canvas, brightness, contrast);
+    return;
+  }
+
+  ctx.drawImage(src, 0, 0);
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = imgData.data;
+  const w = canvas.width, h = canvas.height;
+
+  // Convert to grayscale
+  const gray = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    gray[i] = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
+  }
+
+  if (state.enhanceMode === 'bw') {
+    // === IMPROVED SHADOW REMOVAL ===
+    // Multi-scale background estimation: combine a small-radius and large-radius blur
+    // to handle both broad lighting gradients and local shadows (e.g. finger, fold)
+    const dimMax = Math.max(w, h);
+    const bgLarge = gaussBlurLarge(gray, w, h, dimMax * 0.06);
+    const bgSmall = gaussBlurLarge(gray, w, h, dimMax * 0.015);
+
+    // Also compute a local-max approximation for very dark shadow regions
+    // by taking the brighter of the two scales
+    const bg = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      bg[i] = Math.max(bgLarge[i], bgSmall[i]);
+    }
+
+    // Normalize: divide by background to flatten illumination
+    const normalized = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const bgVal = Math.max(bg[i], 1);
+      // Scale so that paper-brightness pixels map close to 255
+      normalized[i] = Math.min(255, (gray[i] / bgVal) * 240 + brightness);
+    }
+
+    // BW Strength controls the blend between cleaned grayscale and hard threshold
+    if (bwStrength < 0.05) {
+      // Pure grayscale, no thresholding (just shadow-removed)
+      for (let i = 0; i < w * h; i++) {
+        const v = clamp(normalized[i]);
+        d[i*4] = d[i*4+1] = d[i*4+2] = v;
+      }
+    } else {
+      // Adaptive threshold for B&W
+      const blockSize = Math.max(15, Math.round(Math.min(w, h) / 25) | 1);
+      const localMean = gaussBlurLarge(normalized, w, h, blockSize);
+
+      // Threshold offset scaled by contrast and strength
+      const threshOffset = 8 + contrast * 0.3;
+
+      for (let i = 0; i < w * h; i++) {
+        const thresh = localMean[i] - threshOffset;
+        const bwVal = normalized[i] < thresh ? 0 : 255;
+        // Blend between shadow-removed gray and hard B&W based on strength
+        const grayVal = clamp(normalized[i]);
+        const blended = Math.round(grayVal * (1 - bwStrength) + bwVal * bwStrength);
+        d[i*4] = d[i*4+1] = d[i*4+2] = blended;
+      }
+    }
+  } else {
+    // Color enhance: multi-scale shadow removal per channel
+    const dimMax = Math.max(w, h);
+    const radiusL = dimMax * 0.06;
+    const radiusS = dimMax * 0.015;
+    for (let ch = 0; ch < 3; ch++) {
+      const chanData = new Float32Array(w * h);
+      for (let i = 0; i < w * h; i++) chanData[i] = d[i * 4 + ch];
+      const bgL = gaussBlurLarge(chanData, w, h, radiusL);
+      const bgS = gaussBlurLarge(chanData, w, h, radiusS);
+      for (let i = 0; i < w * h; i++) {
+        const bgVal = Math.max(Math.max(bgL[i], bgS[i]), 1);
+        d[i*4+ch] = clamp(chanData[i] / bgVal * 235 + brightness);
+      }
+    }
+    // Apply contrast
+    const cFactor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+    for (let i = 0; i < d.length; i += 4) {
+      d[i]   = clamp(cFactor * (d[i] - 128) + 128);
+      d[i+1] = clamp(cFactor * (d[i+1] - 128) + 128);
+      d[i+2] = clamp(cFactor * (d[i+2] - 128) + 128);
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+function applyBrightnessContrast(canvas, brightness, contrast) {
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = imgData.data;
+  const cFactor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+  for (let i = 0; i < d.length; i += 4) {
+    d[i]   = clamp(cFactor * (d[i] + brightness - 128) + 128);
+    d[i+1] = clamp(cFactor * (d[i+1] + brightness - 128) + 128);
+    d[i+2] = clamp(cFactor * (d[i+2] + brightness - 128) + 128);
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+function clamp(v) { return Math.max(0, Math.min(255, Math.round(v))); }
+
+// Large-radius Gaussian blur using box blur approximation (3 passes)
+function gaussBlurLarge(src, w, h, radius) {
+  let r = Math.round(radius);
+  if (r < 1) r = 1;
+  let data = new Float32Array(src);
+  for (let pass = 0; pass < 3; pass++) {
+    data = boxBlur(data, w, h, r);
+  }
+  return data;
+}
+
+function gaussBlurLargeChannel(imgData, w, h, channel, radius) {
+  const src = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) src[i] = imgData[i * 4 + channel];
+  return gaussBlurLarge(src, w, h, radius);
+}
+
+function boxBlur(src, w, h, r) {
+  const tmp = new Float32Array(w * h);
+  const out = new Float32Array(w * h);
+  // Horizontal
+  for (let y = 0; y < h; y++) {
+    let sum = 0, count = 0;
+    for (let x = 0; x <= r && x < w; x++) { sum += src[y*w+x]; count++; }
+    for (let x = 0; x < w; x++) {
+      if (x + r + 1 < w) { sum += src[y*w+x+r+1]; count++; }
+      if (x - r - 1 >= 0) { sum -= src[y*w+x-r-1]; count--; }
+      tmp[y*w+x] = sum / count;
+    }
+  }
+  // Vertical
+  for (let x = 0; x < w; x++) {
+    let sum = 0, count = 0;
+    for (let y = 0; y <= r && y < h; y++) { sum += tmp[y*w+x]; count++; }
+    for (let y = 0; y < h; y++) {
+      if (y + r + 1 < h) { sum += tmp[(y+r+1)*w+x]; count++; }
+      if (y - r - 1 >= 0) { sum -= tmp[(y-r-1)*w+x]; count--; }
+      out[y*w+x] = sum / count;
+    }
+  }
+  return out;
+}
+
+function backFromEnhance() { openCropView(); }
+
+function finishDone() {
+  // Save current page and go to pages view
+  addPage();
+}
+
+function addPage() {
+  const canvas = document.getElementById('enhance-canvas');
+  const copy = document.createElement('canvas');
+  copy.width = canvas.width; copy.height = canvas.height;
+  copy.getContext('2d').drawImage(canvas, 0, 0);
+  state.pages.push({
+    id: Date.now(),
+    original: state.capturedImage,
+    enhanced: copy,
+    ocrText: ''
+  });
+  state.capturedImage = null;
+  state.croppedForEnhance = null;
+  renderPages();
+  showView('pages');
+}
+
+// ===== SETTINGS =====
+const DEFAULT_SETTINGS = {
+  filenameFmt: '{yyyy}_{mm}_{dd} - {title}',
+  llmEnabled: false,
+  llmModel: 'onnx-community/Qwen2.5-0.5B-Instruct',
+  llmPrompt: 'You are a document title generator. Based on the OCR text from a scanned document, generate a short, descriptive title. Reply with ONLY the title, nothing else. Keep it under 60 characters. Do not use quotes.',
+  ocrLangs: 'eng+deu',
+};
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('docscan_settings') || '{}');
+    const merged = { ...DEFAULT_SETTINGS, ...saved };
+    // Migrate old broken default model
+    if (merged.llmModel === 'onnx-community/SmolLM2-135M-Instruct') {
+      merged.llmModel = DEFAULT_SETTINGS.llmModel;
+    }
+    return merged;
+  } catch { return { ...DEFAULT_SETTINGS }; }
+}
+
+function saveSettings() {
+  const s = {
+    filenameFmt: document.getElementById('set-filename-fmt').value || DEFAULT_SETTINGS.filenameFmt,
+    llmEnabled: document.getElementById('set-llm-enabled').checked,
+    llmModel: document.getElementById('set-llm-model').value || DEFAULT_SETTINGS.llmModel,
+    llmPrompt: document.getElementById('set-llm-prompt').value || DEFAULT_SETTINGS.llmPrompt,
+    ocrLangs: document.getElementById('set-ocr-langs').value || DEFAULT_SETTINGS.ocrLangs,
+  };
+  localStorage.setItem('docscan_settings', JSON.stringify(s));
+  return s;
+}
+
+function getSettings() {
+  // Read live from DOM if settings view exists, otherwise from storage
+  return {
+    filenameFmt: document.getElementById('set-filename-fmt').value || DEFAULT_SETTINGS.filenameFmt,
+    llmEnabled: document.getElementById('set-llm-enabled').checked,
+    llmModel: document.getElementById('set-llm-model').value || DEFAULT_SETTINGS.llmModel,
+    llmPrompt: document.getElementById('set-llm-prompt').value || DEFAULT_SETTINGS.llmPrompt,
+    ocrLangs: document.getElementById('set-ocr-langs').value || DEFAULT_SETTINGS.ocrLangs,
+  };
+}
+
+function populateSettingsUI() {
+  const s = loadSettings();
+  document.getElementById('set-filename-fmt').value = s.filenameFmt;
+  document.getElementById('set-llm-enabled').checked = s.llmEnabled;
+  document.getElementById('set-llm-model').value = s.llmModel;
+  document.getElementById('set-llm-prompt').value = s.llmPrompt;
+  document.getElementById('set-ocr-langs').value = s.ocrLangs;
+  document.getElementById('llm-options').style.display = s.llmEnabled ? 'block' : 'none';
+}
+
+function onLlmToggle() {
+  const on = document.getElementById('set-llm-enabled').checked;
+  document.getElementById('llm-options').style.display = on ? 'block' : 'none';
+  saveSettings();
+}
+
+// Auto-save settings on input change (debounced)
+let settingsSaveTimer = null;
+function onSettingChange() {
+  if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
+  settingsSaveTimer = setTimeout(saveSettings, 500);
+}
+
+// ===== LLM (Transformers.js) =====
+let llmPipeline = null;
+let llmStatus = 'off'; // off, loading, ready, error
+
+function setLlmStatus(status, text) {
+  llmStatus = status;
+  const dot = document.getElementById('llm-dot');
+  const label = document.getElementById('llm-status-text');
+  const btn = document.getElementById('llm-load-btn');
+  dot.className = 'dot ' + status;
+  label.textContent = text;
+  btn.style.display = (status === 'ready') ? 'none' : 'inline-flex';
+  btn.disabled = (status === 'loading');
+  btn.textContent = status === 'error' ? 'Retry' : 'Load Model';
+}
+
+async function loadLLM() {
+  const settings = getSettings();
+  setLlmStatus('loading', 'Loading Transformers.js...');
+  try {
+    // Dynamic ESM import of Transformers.js v3
+    const mod = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3');
+    const { pipeline, env } = mod;
+    env.allowLocalModels = false;
+
+    setLlmStatus('loading', 'Downloading model (first time only)...');
+
+    const progressCb = (p) => {
+      if (p.status === 'progress' && p.progress) {
+        setLlmStatus('loading', `Downloading: ${Math.round(p.progress)}%`);
+      } else if (p.status === 'initiate') {
+        setLlmStatus('loading', `Loading ${p.file || 'model'}...`);
+      } else if (p.status === 'ready') {
+        setLlmStatus('loading', 'Initializing...');
+      }
+    };
+
+    // Try quantizations in order of preference: q4 (smallest), then q8, then default
+    const dtypes = ['q4', 'q8', null];
+    let lastErr = null;
+    for (const dtype of dtypes) {
+      try {
+        const opts = { device: 'wasm', progress_callback: progressCb };
+        if (dtype) opts.dtype = dtype;
+        if (dtype) setLlmStatus('loading', `Trying ${dtype} quantization...`);
+        llmPipeline = await pipeline('text-generation', settings.llmModel, opts);
+        setLlmStatus('ready', `Model ready${dtype ? ' (' + dtype + ')' : ''}`);
+        saveSettings();
+        return true;
+      } catch (e) {
+        lastErr = e;
+        console.warn(`Failed with dtype=${dtype}:`, e.message);
+        llmPipeline = null;
+        // Only retry if it looks like a file-not-found / unauthorized (quantization missing)
+        if (!e.message?.includes('Unauthorized') && !e.message?.includes('404') && !e.message?.includes('not found')) {
+          throw e; // Genuine error, don't retry
+        }
+      }
+    }
+    throw lastErr || new Error('All quantization attempts failed');
+  } catch (e) {
+    console.error('LLM load error:', e);
+    setLlmStatus('error', 'Failed: ' + (e.message || 'unknown error').substring(0, 100));
+    llmPipeline = null;
+    return false;
+  }
+}
+
+async function generateTitleWithLLM(ocrText) {
+  if (!llmPipeline || llmStatus !== 'ready') return null;
+  try {
+    const settings = getSettings();
+    const prompt = settings.llmPrompt;
+    const messages = [
+      { role: 'system', content: prompt },
+      { role: 'user', content: ocrText.substring(0, 1500) }
+    ];
+    const result = await llmPipeline(messages, {
+      max_new_tokens: 60,
+      temperature: 0.3,
+      do_sample: true,
+    });
+    // Extract the assistant's reply from the generated output
+    const generated = result[0].generated_text;
+    if (Array.isArray(generated)) {
+      // Chat format: array of {role, content}
+      const last = generated[generated.length - 1];
+      return (last.content || '').trim().replace(/^["']|["']$/g, '');
+    }
+    // Plain text format
+    const text = typeof generated === 'string' ? generated : '';
+    return text.trim().substring(0, 80);
+  } catch (e) {
+    console.error('LLM generate error:', e);
+    return null;
+  }
+}
+
+// ===== FILENAME FORMAT =====
+function formatFilename(fmt, title, pageCount) {
+  const now = new Date();
+  const yyyy = String(now.getFullYear());
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const n = String(pageCount);
+  let name = fmt
+    .replace(/\{yyyy\}/gi, yyyy)
+    .replace(/\{mm\}/gi, mm)
+    .replace(/\{dd\}/gi, dd)
+    .replace(/\{title\}/gi, title)
+    .replace(/\{n\}/gi, n);
+  // Sanitize for filesystem
+  name = name.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, ' ').trim();
+  return name || 'Scanned_Document';
+}
+
+function updateFilenamePreview() {
+  const title = document.getElementById('pdf-title').value || 'Scanned Document';
+  const fmt = getSettings().filenameFmt;
+  const preview = formatFilename(fmt, title, state.pages.length) + '.pdf';
+  document.getElementById('filename-preview').textContent = preview;
+}
+
+// ===== OCR =====
+async function runOCR(pages) {
+  const langs = getSettings().ocrLangs || 'eng+deu';
+  let allText = '';
+  for (let i = 0; i < pages.length; i++) {
+    updateProcessing('Running OCR...', `Page ${i+1} of ${pages.length}`);
+    try {
+      const result = await Tesseract.recognize(pages[i].enhanced.toDataURL('image/png'), langs, {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            updateProcessing('Running OCR...', `Page ${i+1}: ${Math.round(m.progress * 100)}%`);
+          }
+        }
+      });
+      pages[i].ocrText = result.data.text;
+      allText += result.data.text + '\n';
+    } catch (e) {
+      console.error('OCR error on page', i, e);
+    }
+  }
+  return allText;
+}
+
+function suggestTitle(ocrText) {
+  if (!ocrText || ocrText.trim().length < 3) return 'Scanned Document';
+  const lines = ocrText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+  for (const line of lines.slice(0, 5)) {
+    const clean = line.replace(/[^a-zA-Z0-9äöüÄÖÜß\s\-:.,]/g, '').trim();
+    if (clean.length >= 3 && clean.length <= 80) {
+      return clean.substring(0, 60);
+    }
+  }
+  const words = lines.join(' ').split(/\s+/).slice(0, 5).join(' ');
+  return words.substring(0, 60) || 'Scanned Document';
+}
+
+// ===== PDF EXPORT =====
+async function startExport() {
+  if (state.pages.length === 0) return;
+  showProcessing('Running OCR...', '');
+  try {
+    const fullText = await runOCR(state.pages);
+    const settings = getSettings();
+
+    // Title: try LLM first, fall back to heuristic
+    let title;
+    if (settings.llmEnabled && llmPipeline && llmStatus === 'ready') {
+      updateProcessing('Generating title with AI...', '');
+      title = await generateTitleWithLLM(fullText);
+      if (!title || title.length < 2) title = null;
+    }
+    if (!title) {
+      title = suggestTitle(fullText);
+    }
+
+    hideProcessing();
+
+    document.getElementById('pdf-title').value = title;
+    document.getElementById('ocr-preview-text').textContent = fullText.substring(0, 500) + (fullText.length > 500 ? '...' : '');
+    const badge = document.getElementById('ocr-badge');
+    const llmUsed = settings.llmEnabled && llmStatus === 'ready';
+    badge.textContent = (llmUsed ? 'AI Title · ' : '') + `OCR Complete · ${state.pages.length} page${state.pages.length>1?'s':''}`;
+    updateFilenamePreview();
+    document.getElementById('export-modal').classList.add('active');
+  } catch(e) {
+    hideProcessing();
+    document.getElementById('pdf-title').value = 'Scanned Document';
+    document.getElementById('ocr-preview-text').textContent = 'OCR could not be completed.';
+    updateFilenamePreview();
+    document.getElementById('export-modal').classList.add('active');
+  }
+}
+
+function closeExportModal() {
+  document.getElementById('export-modal').classList.remove('active');
+}
+
+async function downloadPDF() {
+  closeExportModal();
+  showProcessing('Generating PDF...', '');
+  await new Promise(r => setTimeout(r, 50));
+
+  const { jsPDF } = window.jspdf;
+  const title = document.getElementById('pdf-title').value || 'Scanned Document';
+  const settings = getSettings();
+  const filename = formatFilename(settings.filenameFmt, title, state.pages.length);
+  let pdf = null;
+
+  for (let i = 0; i < state.pages.length; i++) {
+    updateProcessing('Generating PDF...', `Page ${i+1} of ${state.pages.length}`);
+    const canvas = state.pages[i].enhanced;
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    const a4w = 210, a4h = 297;
+    const ratio = canvas.width / canvas.height;
+    let pw, ph;
+    if (ratio > a4w / a4h) {
+      pw = a4w; ph = a4w / ratio;
+    } else {
+      ph = a4h; pw = a4h * ratio;
+    }
+    const orient = pw > ph ? 'l' : 'p';
+
+    if (i === 0) {
+      pdf = new jsPDF({ orientation: orient, unit: 'mm', format: [pw, ph] });
+    } else {
+      pdf.addPage([pw, ph], orient);
+    }
+    pdf.addImage(imgData, 'JPEG', 0, 0, pw, ph);
+
+    const ocrText = state.pages[i].ocrText;
+    if (ocrText) {
+      pdf.setFontSize(1);
+      pdf.setTextColor(255, 255, 255);
+      pdf.text(ocrText.substring(0, 2000), 1, 1, { maxWidth: pw - 2 });
+    }
+  }
+
+  pdf.setProperties({ title: title, creator: 'DocScan PWA' });
+  pdf.save(filename + '.pdf');
+  hideProcessing();
+}
+
+// ===== UI HELPERS =====
+function showProcessing(msg, detail) {
+  document.getElementById('proc-msg').textContent = msg || 'Processing...';
+  document.getElementById('proc-detail').textContent = detail || '';
+  document.getElementById('processing').classList.add('active');
+}
+function updateProcessing(msg, detail) {
+  if (msg) document.getElementById('proc-msg').textContent = msg;
+  if (detail !== undefined) document.getElementById('proc-detail').textContent = detail;
+}
+function hideProcessing() {
+  document.getElementById('processing').classList.remove('active');
+}
+
+// ===== FILE INPUT FALLBACK =====
+function setupFileInputFallback() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment';
+  input.id = 'file-fallback';
+  input.style.display = 'none';
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      state.capturedImage = c;
+      openCropView();
+    };
+    img.src = URL.createObjectURL(file);
+    input.value = '';
+  };
+  document.body.appendChild(input);
+}
+
+// ===== INIT =====
+setupFileInputFallback();
+populateSettingsUI();
+renderPages();
+
+// Attach auto-save to settings inputs
+document.querySelectorAll('#view-settings .setting-input').forEach(el => {
+  el.addEventListener('input', onSettingChange);
+});
+
+// If LLM was enabled, show options (model won't auto-load — user must click Load)
+if (loadSettings().llmEnabled) {
+  document.getElementById('llm-options').style.display = 'block';
+}
+</script>
+</body>
+</html>
