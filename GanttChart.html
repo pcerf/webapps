@@ -26,8 +26,18 @@
     padding: 20px 20px 10px; background: var(--bg-editor-header);
     border-bottom: 1px solid var(--border);
   }
+  .editor-header-top { display: flex; align-items: center; justify-content: space-between; }
   .editor-header h1 { font-family: Georgia, serif; font-size: 24px; font-weight: 400; color: #f0f0f0; }
   .editor-header p { font-size: 11.5px; color: #8b949e; margin-top: 3px; font-weight: 300; }
+  .undo-redo-group { display: flex; gap: 2px; }
+  .undo-redo-btn {
+    width: 28px; height: 28px; border-radius: 5px; border: 1px solid #374151;
+    background: transparent; color: #8b949e; font-size: 15px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+    transition: all 0.15s; line-height: 1;
+  }
+  .undo-redo-btn:hover:not(:disabled) { color: #d1d5db; border-color: #4b5563; background: rgba(55,65,81,0.5); }
+  .undo-redo-btn:disabled { opacity: 0.3; cursor: default; }
   .editor-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
   .md-copy-btn {
     position: absolute; top: 6px; right: 6px; z-index: 5;
@@ -181,7 +191,17 @@
 
 <aside class="editor-panel">
   <div class="editor-header">
-    <h1>Grant Gantt</h1>
+    <div class="editor-header-top">
+      <h1>Grant Gantt</h1>
+      <div class="undo-redo-group">
+        <button class="undo-redo-btn" id="undoBtn" onclick="undo()" disabled title="Undo (Ctrl+Z)">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h7a3 3 0 0 1 0 6H8"/><path d="M6 10L3 7l3-3"/></svg>
+        </button>
+        <button class="undo-redo-btn" id="redoBtn" onclick="redo()" disabled title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 7H6a3 3 0 0 0 0 6h2"/><path d="M10 10l3-3-3-3"/></svg>
+        </button>
+      </div>
+    </div>
     <p>Define work packages · Chart updates live · Drag bars to edit</p>
   </div>
   <div class="editor-body">
@@ -387,8 +407,13 @@ const ARROW_COLORS = {
 const st = { zoomH: 1, zoomV: 1, collapsedGroups: new Set(), hiddenTasks: new Set(), drag: null, labelsOnBars: false, fontScale: 1, arrowWidth: 1.3, arrowColor: 'gray', arrowCurve: 0.35, arrowOrtho: false, labelWidth: 210 };
 let lastParsed = null;
 
+const SETTING_KEYS = ['palette','labels','font-scale','label-width','arrow-width','arrow-curve','arrow-color','arrow-ortho','zoom-h','zoom-v'];
+const SETTING_DEFAULTS = { palette:'academic', labels:'side', 'font-scale':'1', 'label-width':'210', 'arrow-width':'1.3', 'arrow-curve':'0.35', 'arrow-color':'gray', 'arrow-ortho':'false', 'zoom-h':'1', 'zoom-v':'1' };
+
 // ============================== PARSER ==============================
 function parseInput(text) {
+  // Reset all settings to defaults so absent lines revert properly (e.g. after undo)
+  for (const key of SETTING_KEYS) applySetting(key, SETTING_DEFAULTS[key]);
   const lines = text.split('\n');
   let unit = 'quarters', title = 'Project Timeline';
   const groups = []; let cur = { name: null, tasks: [] };
@@ -828,15 +853,21 @@ function endDrag() {
       const fmt = n => Number.isInteger(n)?n.toString():n.toFixed(1);
       pp[1] = ` ${fmt(ns)}-${fmt(ne)} `;
       lines[li] = pp.join('|');
+      const oldVal = ta.value;
       ta.value = lines.join('\n');
+      if (ta.value !== oldVal) {
+        undoStack.push(oldVal);
+        if (undoStack.length > MAX_UNDO) undoStack.shift();
+        redoStack.length = 0;
+        lastSnap = ta.value;
+        updateUndoRedoBtns();
+      }
     }
   }
   render();
 }
 
 // ============================== SETTINGS SYNC ==============================
-const SETTING_KEYS = ['palette','labels','font-scale','label-width','arrow-width','arrow-curve','arrow-color','arrow-ortho','zoom-h','zoom-v'];
-const SETTING_DEFAULTS = { palette:'academic', labels:'side', 'font-scale':'1', 'label-width':'210', 'arrow-width':'1.3', 'arrow-curve':'0.35', 'arrow-color':'gray', 'arrow-ortho':'false', 'zoom-h':'1', 'zoom-v':'1' };
 
 function applySetting(key, val) {
   switch(key) {
@@ -935,8 +966,21 @@ function updateSettingsInText() {
   }
   const newText = lines.join('\n');
   if (newText !== text) {
+    // Capture the state before the first change in a burst (e.g. slider drag)
+    if (!updateSettingsInText._before) updateSettingsInText._before = text;
+    clearTimeout(updateSettingsInText._timer);
+    updateSettingsInText._timer = setTimeout(() => {
+      if (updateSettingsInText._before != null) {
+        undoStack.push(updateSettingsInText._before);
+        if (undoStack.length > MAX_UNDO) undoStack.shift();
+        redoStack.length = 0;
+        updateUndoRedoBtns();
+        updateSettingsInText._before = null;
+      }
+    }, 400);
     const start = ta.selectionStart, end = ta.selectionEnd;
     ta.value = newText;
+    lastSnap = newText;
     ta.selectionStart = start; ta.selectionEnd = end;
   }
 }
@@ -1179,9 +1223,58 @@ document.addEventListener('click',e=>{
   }
 });
 
+// ============================== UNDO / REDO ==============================
+const undoStack = [];
+const redoStack = [];
+let lastSnap = '';
+const MAX_UNDO = 200;
+
+function snapUndo() {
+  const val = document.getElementById('input').value;
+  if (val === lastSnap) return;
+  undoStack.push(lastSnap);
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack.length = 0;
+  lastSnap = val;
+  updateUndoRedoBtns();
+}
+function undo() {
+  if (!undoStack.length) return;
+  const ta = document.getElementById('input');
+  redoStack.push(ta.value);
+  const prev = undoStack.pop();
+  lastSnap = prev;
+  ta.value = prev;
+  updateUndoRedoBtns();
+  render();
+}
+function redo() {
+  if (!redoStack.length) return;
+  const ta = document.getElementById('input');
+  undoStack.push(ta.value);
+  const next = redoStack.pop();
+  lastSnap = next;
+  ta.value = next;
+  updateUndoRedoBtns();
+  render();
+}
+function updateUndoRedoBtns() {
+  document.getElementById('undoBtn').disabled = !undoStack.length;
+  document.getElementById('redoBtn').disabled = !redoStack.length;
+}
+
 // ============================== INIT ==============================
 let dbT;
-document.getElementById('input').addEventListener('input',()=>{clearTimeout(dbT);dbT=setTimeout(render,180);});
+document.getElementById('input').addEventListener('input',()=>{
+  snapUndo();
+  clearTimeout(dbT); dbT=setTimeout(render,180);
+});
+document.addEventListener('keydown', e => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+  else if (mod && e.key === 'Z') { e.preventDefault(); redo(); }
+});
 window.addEventListener('resize',()=>{clearTimeout(dbT);dbT=setTimeout(()=>render(true),100);});
 
 document.getElementById('chartContainer').addEventListener('wheel',e=>{
@@ -1214,8 +1307,9 @@ unit: quarters
 - Open-Source Release | 11-12 | deps: TP!`;
 
 document.getElementById('input').value = DEFAULT_CHART;
+lastSnap = DEFAULT_CHART;
 updatePaletteDots();
-loadFromURL().then(() => render());
+loadFromURL().then(() => { lastSnap = document.getElementById('input').value; render(); });
 </script>
 </body>
 </html>
