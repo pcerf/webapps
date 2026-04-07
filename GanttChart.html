@@ -57,6 +57,7 @@
   .ref-content strong { color: #d1d5db; font-weight: 500; }
   .ref-content code { background: #1f2937; padding: 1px 5px; border-radius: 3px; color: #93c5fd; }
   .editor-footer {
+    position: relative;
     padding: 10px 18px; border-top: 1px solid var(--border);
     display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
   }
@@ -78,6 +79,17 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   }
   .export-menu.open { display: flex; }
+  .share-info {
+    position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 6px;
+    background: #1a2744; border: 1px solid #2d4a7c; border-radius: 6px;
+    padding: 10px 30px 10px 12px; font-size: 11.5px; line-height: 1.5;
+    color: #93c5fd; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .share-info-close {
+    position: absolute; top: 6px; right: 8px; background: none; border: none;
+    color: #6b7280; font-size: 14px; cursor: pointer; padding: 0; line-height: 1;
+  }
+  .share-info-close:hover { color: #9ca3af; }
 
   .error-bar {
     padding: 6px 18px; font-size: 11.5px;
@@ -551,7 +563,7 @@ function renderChart(data) {
   const arrowG = el('g');
   layout.rows.forEach(r => {
     const y = HDR_H + r.vr * ROW_H;
-    if (r.type==='grp') { renderGrpHdr(root,r,y,ROW_H,colW,minT,LW); return; }
+    if (r.type==='grp') { renderGrpHdr(root,r,y,ROW_H,colW,minT,LW,chartW); return; }
     const task = r.task;
     const barY = y + (ROW_H-BAR_H)/2;
     const barX = LW + (task.start-minT)*colW;
@@ -696,10 +708,10 @@ function renderChart(data) {
   attachEvents(svg);
 }
 
-function renderGrpHdr(root, r, y, ROW_H, colW, minT, LW) {
+function renderGrpHdr(root, r, y, ROW_H, colW, minT, LW, chartW) {
   const gg = el('g',{class:'group-toggle','data-gi':r.gIdx});
   // Background
-  gg.appendChild(el('rect',{x:0,y,width:LW+1000*colW,height:ROW_H,fill:'#f1f2f4',opacity:0.6}));
+  gg.appendChild(el('rect',{x:0,y,width:chartW,height:ROW_H,fill:'#f1f2f4',opacity:0.6}));
   // Chevron
   const labelY = st.labelsOnBars ? y+ROW_H*0.32 : y+ROW_H/2+1;
   const ch = el('text',{x:10,y:labelY,'dominant-baseline':'middle','font-size':11*st.fontScale,fill:'#6b7280'});
@@ -1102,6 +1114,7 @@ async function decompressText(b64) {
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
   return await new Response(stream).text();
 }
+let sharedOnce = false;
 async function shareAsLink() {
   const btn = document.getElementById('shareBtn');
   const text = document.getElementById('input').value;
@@ -1112,10 +1125,25 @@ async function shareAsLink() {
     await navigator.clipboard.writeText(url.toString());
     btn.textContent = '✓ Copied!';
     setTimeout(() => { btn.textContent = '🔗 Share'; }, 1500);
+    if (!sharedOnce) {
+      sharedOnce = true;
+      showShareInfo();
+    }
   } catch (e) {
     btn.textContent = '✗ Failed';
     setTimeout(() => { btn.textContent = '🔗 Share'; }, 1500);
   }
+}
+function showShareInfo() {
+  const existing = document.getElementById('shareInfo');
+  if (existing) return;
+  const footer = document.querySelector('.editor-footer');
+  const div = document.createElement('div');
+  div.className = 'share-info';
+  div.id = 'shareInfo';
+  div.innerHTML = 'The link contains the full chart data in the URL. It may not work for very large charts. The link does not update automatically\u2009\u2014\u2009re-share after making changes.'
+    + '<button class="share-info-close" onclick="this.parentElement.remove()">\u00d7</button>';
+  footer.appendChild(div);
 }
 async function loadFromURL() {
   const params = new URLSearchParams(window.location.search);
