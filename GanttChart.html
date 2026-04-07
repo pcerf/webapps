@@ -69,6 +69,16 @@
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-ghost { background: transparent; color: #8b949e; border: 1px solid #374151; }
   .btn-ghost:hover { color: #d1d5db; border-color: #4b5563; }
+  .export-wrap { position: relative; }
+  .export-menu {
+    position: absolute; bottom: 100%; left: 0; margin-bottom: 4px;
+    display: none; flex-direction: column; gap: 3px;
+    background: var(--bg-editor-header); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .export-menu.open { display: flex; }
+
   .error-bar {
     padding: 6px 18px; font-size: 11.5px;
     background: #2d1b1b; color: #f87171;
@@ -205,11 +215,17 @@
   </div>
   <div class="error-bar" id="errors"></div>
   <div class="editor-footer">
-    <button class="btn btn-primary" onclick="exportSVG()">SVG</button>
-    <button class="btn btn-primary" onclick="exportPNG()">PNG</button>
-    <button class="btn btn-primary" onclick="exportHTML()">HTML</button>
-    <button class="btn btn-primary" onclick="exportMD()">MD</button>
-    <button class="btn btn-ghost" id="screenshotBtn" onclick="copyChartToClipboard()" title="Copy chart to clipboard" style="padding:4px 8px;font-size:11px">📋</button>
+    <div class="export-wrap">
+      <button class="btn btn-primary" id="exportToggle" onclick="toggleExportMenu()">Export ▴</button>
+      <div class="export-menu" id="exportMenu">
+        <button class="btn btn-primary" onclick="exportSVG();closeExportMenu()">SVG</button>
+        <button class="btn btn-primary" onclick="exportPNG();closeExportMenu()">PNG</button>
+        <button class="btn btn-primary" onclick="exportHTML();closeExportMenu()">HTML</button>
+        <button class="btn btn-primary" onclick="exportMD();closeExportMenu()">MD</button>
+      </div>
+    </div>
+    <button class="btn btn-ghost" id="screenshotBtn" onclick="copyChartToClipboard()" title="Copy chart to clipboard" style="padding:4px 8px;font-size:11px">📋 Clipboard</button>
+    <button class="btn btn-ghost" id="shareBtn" onclick="shareAsLink()" title="Copy shareable link to clipboard">🔗 Share</button>
     <button class="btn btn-ghost" id="refToggle" onclick="toggleRef()">Format ▴</button>
   </div>
 </aside>
@@ -1068,11 +1084,72 @@ b.addEventListener('mousemove',e=>{tip.style.left=(e.clientX+14)+'px';tip.style.
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function download(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
 
+// ============================== SHARE ==============================
+async function compressText(text) {
+  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  const buf = await new Response(stream).arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+async function decompressText(b64) {
+  b64 = b64.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return await new Response(stream).text();
+}
+async function shareAsLink() {
+  const btn = document.getElementById('shareBtn');
+  const text = document.getElementById('input').value;
+  try {
+    const encoded = await compressText(text);
+    const url = new URL(window.location.href.split('?')[0]);
+    url.searchParams.set('chart', encoded);
+    await navigator.clipboard.writeText(url.toString());
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = '🔗 Share'; }, 1500);
+  } catch (e) {
+    btn.textContent = '✗ Failed';
+    setTimeout(() => { btn.textContent = '🔗 Share'; }, 1500);
+  }
+}
+async function loadFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const chart = params.get('chart');
+  if (chart) {
+    try {
+      const text = await decompressText(chart);
+      document.getElementById('input').value = text;
+    } catch (e) {
+      console.warn('Failed to decompress chart from URL:', e);
+    }
+  }
+}
+
 // ============================== UI ==============================
 function toggleRef(){
   const p=document.getElementById('refPanel'),b=document.getElementById('refToggle');
   p.classList.toggle('open'); b.textContent=p.classList.contains('open')?'Format ▾':'Format ▴';
 }
+function toggleExportMenu(){
+  const m=document.getElementById('exportMenu'),b=document.getElementById('exportToggle');
+  const open=m.classList.toggle('open');
+  b.textContent=open?'Export ▾':'Export ▴';
+}
+function closeExportMenu(){
+  document.getElementById('exportMenu').classList.remove('open');
+  document.getElementById('exportToggle').textContent='Export ▴';
+}
+document.addEventListener('click',e=>{
+  const m=document.getElementById('exportMenu'),b=document.getElementById('exportToggle'),w=document.querySelector('.export-wrap');
+  if(m.classList.contains('open')&&!w.contains(e.target)){
+    m.classList.remove('open'); b.textContent='Export ▴';
+  }
+});
 
 // ============================== INIT ==============================
 let dbT;
@@ -1085,7 +1162,7 @@ document.getElementById('chartContainer').addEventListener('wheel',e=>{
   if(e.shiftKey) doZoom('v',dir); else doZoom('h',dir);
 },{passive:false});
 
-document.getElementById('input').value=`title: Hybrid ML Framework
+const DEFAULT_CHART = `title: Hybrid ML Framework
 unit: quarters
 
 # Phase 1 — Foundation
@@ -1107,7 +1184,10 @@ unit: quarters
 - Journal Paper | 10-12 | id: JP | deps: RE!
 - Conference Talk | 11-12 | deps: JP
 - Open-Source Release | 11-12 | deps: TP!`;
-updatePaletteDots(); render();
+
+document.getElementById('input').value = DEFAULT_CHART;
+updatePaletteDots();
+loadFromURL().then(() => render());
 </script>
 </body>
 </html>
