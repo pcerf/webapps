@@ -668,6 +668,13 @@ function renderChart(data) {
     root.appendChild(rh);
   }
 
+  // Expand SVG width to fit any labels that extend past the chart area
+  const bbox = root.getBBox();
+  const neededW = bbox.x + bbox.width + PAD.l + PAD.r;
+  if (neededW > chartW + PAD.l + PAD.r) {
+    svg.setAttribute('width', neededW);
+  }
+
   // Store for drag
   svg._L = { LABEL_W: LW, colW, minT, ROW_H, BAR_H, allTasks: data.allTasks, prefix };
   attachEvents(svg);
