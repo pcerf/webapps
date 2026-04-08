@@ -181,6 +181,9 @@
   .tooltip.visible { opacity: 1; }
 
   .editor-body.drag-over { outline: 2px dashed var(--accent); outline-offset: -4px; background: rgba(59,130,246,0.04); }
+  .arrow-handle { opacity: 0; transition: opacity 0.15s; cursor: grab; }
+  .arrow-group:hover .arrow-handle { opacity: 0.6; }
+  .arrow-handle:hover { opacity: 1 !important; }
 
   @media (max-width: 800px) {
     body { flex-direction: column; }
@@ -204,7 +207,7 @@
         </button>
       </div>
     </div>
-    <p>Define work packages · Chart updates live · Drag bars to edit</p>
+    <p>Define work packages · Drag bars &amp; arrows · Import &amp; export</p>
   </div>
   <div class="editor-body">
     <button class="md-copy-btn" id="mdCopyBtn" onclick="copyMDToClipboard()" title="Copy MD to clipboard">
@@ -687,7 +690,7 @@ function renderChart(data) {
   const tip = document.getElementById('tooltip');
   data.allTasks.forEach(task => {
     if (task._cy === undefined) return;
-    task.deps.forEach(dep => {
+    task.deps.forEach((dep, depIdx) => {
       if (!dep.arrow) return;
       const si = taskMap[dep.name.toLowerCase()];
       if (si === undefined) return;
@@ -723,16 +726,25 @@ function renderChart(data) {
         const o=14*cv/0.35, m=sy+(ty-sy)/2, bulge=12*cv/0.35;
         path=`M${sx},${sy} L${sx+o},${sy} C${sx+o+bulge},${sy} ${sx+o+bulge},${m} ${(sx+tx)/2},${m} S${tx-o-bulge},${ty} ${tx-o},${ty} L${tx},${ty}`;
       }
-      arrowG.appendChild(el('path',{d:path,fill:'none',stroke:ac,'stroke-width':st.arrowWidth,'marker-start':'url(#ad)','marker-end':'url(#ah)'}));
+      const ag = el('g',{class:'arrow-group'});
+      ag.appendChild(el('path',{d:path,fill:'none',stroke:ac,'stroke-width':st.arrowWidth,'marker-start':'url(#ad)','marker-end':'url(#ah)'}));
       // Arrow tooltip hit area
       const tipText = dep.tooltip
         ? `<strong>${esc(dep.tooltip)}</strong><br><span style="color:#9ca3af">${esc(src.name)} \u2192 ${esc(task.name)}</span>`
         : `<strong>${esc(src.name)} \u2192 ${esc(task.name)}</strong>`;
       const hit = el('path',{d:path,fill:'none',stroke:'transparent','stroke-width':Math.max(12,st.arrowWidth+8),'pointer-events':'stroke',cursor:'pointer'});
-      arrowG.appendChild(hit);
-      hit.addEventListener('mouseenter', () => { tip.innerHTML=tipText; tip.classList.add('visible'); });
-      hit.addEventListener('mouseleave', () => tip.classList.remove('visible'));
-      hit.addEventListener('mousemove', e => { tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY-10)+'px'; });
+      ag.appendChild(hit);
+      hit.addEventListener('mouseenter', () => { if(!arrowDrag){tip.innerHTML=tipText;tip.classList.add('visible');} });
+      hit.addEventListener('mouseleave', () => { if(!arrowDrag) tip.classList.remove('visible'); });
+      hit.addEventListener('mousemove', e => { if(!arrowDrag){tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-10)+'px';} });
+      // Draggable endpoint handles
+      const srcH = el('circle',{cx:sx,cy:sy,r:5,fill:ac,class:'arrow-handle'});
+      const tgtH = el('circle',{cx:tx,cy:ty,r:5,fill:ac,class:'arrow-handle'});
+      ag.appendChild(srcH); ag.appendChild(tgtH);
+      const aInfo = {task,dep,depIdx,src,sx,sy,tx,ty};
+      srcH.addEventListener('mousedown', e => startArrowEndDrag(e,'source',aInfo));
+      tgtH.addEventListener('mousedown', e => startArrowEndDrag(e,'target',aInfo));
+      arrowG.appendChild(ag);
     });
   });
   root.appendChild(arrowG);
@@ -888,6 +900,162 @@ function endDrag() {
     }
   }
   render();
+}
+
+// ============================== ARROW ENDPOINT DRAG ==============================
+let arrowDrag = null;
+
+function depToStr(d) {
+  let s = d.name;
+  if (d.fromOff !== null) s += '@' + d.fromOff;
+  if (d.toOff !== null) s += '>' + d.toOff;
+  if (d.tooltip) s += ' "' + d.tooltip + '"';
+  if (!d.arrow) s += '!';
+  return s;
+}
+function setDepsInLine(line, depsStr) {
+  const parts = line.split('|');
+  for (let i = 0; i < parts.length; i++) {
+    if (/^\s*deps?\s*:/i.test(parts[i].trim())) {
+      parts[i] = ` deps: ${depsStr} `;
+      return parts.join('|');
+    }
+  }
+  return line;
+}
+function removeDepsFromLine(line) {
+  return line.split('|').filter(p => !/^\s*deps?\s*:/i.test(p.trim())).join('|').replace(/\s+$/, '');
+}
+function addDepToLine(line, depStr) {
+  const parts = line.split('|');
+  for (let i = 0; i < parts.length; i++) {
+    if (/^\s*deps?\s*:/i.test(parts[i].trim())) {
+      parts[i] = parts[i].replace(/\s*$/, '') + ', ' + depStr + ' ';
+      return parts.join('|');
+    }
+  }
+  return line + ' | deps: ' + depStr;
+}
+function commitLines(lines) {
+  const ta = document.getElementById('input');
+  const oldVal = ta.value;
+  ta.value = lines.join('\n');
+  if (ta.value !== oldVal) {
+    undoStack.push(oldVal);
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack.length = 0;
+    lastSnap = ta.value;
+    updateUndoRedoBtns();
+  }
+  render();
+}
+
+function startArrowEndDrag(e, endType, info) {
+  e.preventDefault(); e.stopPropagation();
+  const svg = document.getElementById('gantt-svg');
+  const L = svg._L;
+  document.getElementById('tooltip').classList.remove('visible');
+
+  const ac = ARROW_COLORS[st.arrowColor] || ARROW_COLORS.gray;
+  const root = svg.querySelector('g');
+  const preview = el('line',{
+    x1: endType==='source' ? info.tx : info.sx,
+    y1: endType==='source' ? info.ty : info.sy,
+    x2: endType==='source' ? info.sx : info.tx,
+    y2: endType==='source' ? info.sy : info.ty,
+    stroke:ac,'stroke-width':st.arrowWidth+0.5,'stroke-dasharray':'6,4',opacity:0.7
+  });
+  root.appendChild(preview);
+  const snap = el('circle',{cx:0,cy:0,r:6,fill:ac,opacity:0,'pointer-events':'none'});
+  root.appendChild(snap);
+
+  arrowDrag = { endType, ...info, L, preview, snap };
+  document.body.style.cursor = 'grabbing';
+  document.addEventListener('mousemove', onArrowEndDrag);
+  document.addEventListener('mouseup', endArrowEndDrag);
+}
+function onArrowEndDrag(e) {
+  if (!arrowDrag) return;
+  const svg = document.getElementById('gantt-svg');
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX; pt.y = e.clientY;
+  const sp = pt.matrixTransform(svg.getScreenCTM().inverse());
+  sp.x -= PAD.l; sp.y -= PAD.t;
+
+  const L = arrowDrag.L;
+  let nearest = null, nearestDist = Infinity;
+  L.allTasks.forEach(t => {
+    if (t._cy === undefined) return;
+    const dy = Math.abs(sp.y - t._cy);
+    if (dy < nearestDist && dy < L.ROW_H * 0.6) { nearestDist = dy; nearest = t; }
+  });
+
+  const tip = document.getElementById('tooltip');
+  if (nearest) {
+    const timePos = Math.round(((sp.x - L.LABEL_W) / L.colW + L.minT) * 2) / 2;
+    const clamped = Math.max(nearest.start, Math.min(nearest.end, timePos));
+    const snapX = L.LABEL_W + (clamped - L.minT) * L.colW;
+    arrowDrag.preview.setAttribute('x2', snapX);
+    arrowDrag.preview.setAttribute('y2', nearest._cy);
+    arrowDrag.snap.setAttribute('cx', snapX);
+    arrowDrag.snap.setAttribute('cy', nearest._cy);
+    arrowDrag.snap.setAttribute('opacity', 0.5);
+    arrowDrag._nearest = nearest;
+    arrowDrag._timePos = clamped;
+    const off = Math.round((clamped - nearest.start) * 2) / 2;
+    tip.innerHTML = `<strong>${nearest.short != null ? nearest.short : nearest.name}</strong><br>${L.prefix}${clamped}` +
+      (off > 0 ? ` <span style="color:#9ca3af">(+${off})</span>` : '');
+    tip.classList.add('visible');
+  } else {
+    arrowDrag.preview.setAttribute('x2', sp.x);
+    arrowDrag.preview.setAttribute('y2', sp.y);
+    arrowDrag.snap.setAttribute('opacity', 0);
+    arrowDrag._nearest = null;
+    tip.classList.remove('visible');
+  }
+  tip.style.left = (e.clientX+14)+'px'; tip.style.top = (e.clientY-10)+'px';
+}
+function endArrowEndDrag() {
+  document.removeEventListener('mousemove', onArrowEndDrag);
+  document.removeEventListener('mouseup', endArrowEndDrag);
+  document.body.style.cursor = '';
+  document.getElementById('tooltip').classList.remove('visible');
+  if (!arrowDrag) return;
+  arrowDrag.preview.remove(); arrowDrag.snap.remove();
+  const nearest = arrowDrag._nearest;
+  if (!nearest) { arrowDrag = null; return; }
+
+  const lines = document.getElementById('input').value.split('\n');
+  const { task, dep, depIdx, src, endType } = arrowDrag;
+  const timePos = arrowDrag._timePos;
+
+  if (endType === 'source') {
+    const atEnd = Math.abs(timePos - nearest.end) < 0.25;
+    const newFromOff = atEnd ? null : Math.round((timePos - nearest.start) * 2) / 2;
+    const newName = nearest.id || nearest.name;
+    const newDep = { ...dep, name: newName, fromOff: newFromOff };
+    const newDeps = task.deps.map((d, i) => i === depIdx ? newDep : d);
+    lines[task.lineIdx] = setDepsInLine(lines[task.lineIdx], newDeps.map(depToStr).join(', '));
+  } else {
+    const atStart = Math.abs(timePos - nearest.start) < 0.25;
+    const newToOff = atStart ? null : Math.round((timePos - nearest.start) * 2) / 2;
+    if (nearest === task) {
+      const newDep = { ...dep, toOff: newToOff };
+      const newDeps = task.deps.map((d, i) => i === depIdx ? newDep : d);
+      lines[task.lineIdx] = setDepsInLine(lines[task.lineIdx], newDeps.map(depToStr).join(', '));
+    } else {
+      // Move dep to a different target task
+      const remaining = task.deps.filter((_, i) => i !== depIdx);
+      if (remaining.length) {
+        lines[task.lineIdx] = setDepsInLine(lines[task.lineIdx], remaining.map(depToStr).join(', '));
+      } else {
+        lines[task.lineIdx] = removeDepsFromLine(lines[task.lineIdx]);
+      }
+      lines[nearest.lineIdx] = addDepToLine(lines[nearest.lineIdx], depToStr({ ...dep, toOff: newToOff }));
+    }
+  }
+  arrowDrag = null;
+  commitLines(lines);
 }
 
 // ============================== SETTINGS SYNC ==============================
@@ -1074,7 +1242,7 @@ function prepExportSvg() {
   const s=document.createElementNS('http://www.w3.org/2000/svg','style');
   s.textContent=SVG_EXPORT_STYLES;
   c.insertBefore(s,c.firstChild);
-  c.querySelectorAll('.bar-edge,.row-hide-btn').forEach(e=>e.remove());
+  c.querySelectorAll('.bar-edge,.row-hide-btn,.arrow-handle').forEach(e=>e.remove());
   c.querySelectorAll('path[stroke="transparent"]').forEach(e=>e.remove());
   return c;
 }

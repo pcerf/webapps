@@ -6,7 +6,7 @@ A collection of single-file web applications designed to run in your browser. Ju
 
 Just click the links below to use the App directly in your browser.
 
-- [GanttChart.html](https://pcerf.github.io/webapps/GanttChart.html) — Interactive Gantt chart timeline builder with live editing, drag-to-resize, dependency arrows, and SVG/PNG/HTML export.
+- [GanttChart.html](https://pcerf.github.io/webapps/GanttChart.html) — Interactive Gantt chart timeline builder with live Markdown editing, draggable bars and dependency arrows, milestones, collapsible groups, arrow tooltips, file import/export (SVG/PNG/HTML/MD), and URL sharing.
 - [DocScan.html](https://pcerf.github.io/webapps/DocScan.html) — Mobile-friendly document scanner that captures pages via camera, applies perspective correction, and exports to PDF with optional OCR.
 
 ## Privacy and Security
