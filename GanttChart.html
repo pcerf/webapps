@@ -16,7 +16,7 @@
   body { font-family: system-ui, sans-serif; background: var(--bg-chart); color: var(--text-chart); display: flex; }
 
   .editor-panel {
-    width: 400px; min-width: 320px; max-width: 520px;
+    width: 440px; min-width: 320px; max-width: 520px;
     background: var(--bg-editor); color: var(--text-editor);
     display: flex; flex-direction: column;
     border-right: 1px solid var(--border);
@@ -180,6 +180,8 @@
   }
   .tooltip.visible { opacity: 1; }
 
+  .editor-body.drag-over { outline: 2px dashed var(--accent); outline-offset: -4px; background: rgba(59,130,246,0.04); }
+
   @media (max-width: 800px) {
     body { flex-direction: column; }
     .editor-panel { width: 100%!important; min-width: 100%; max-width: 100%; height: 40vh; resize: vertical; }
@@ -231,15 +233,18 @@
         <code>deps: Task A@2</code> — from A's start+2<br>
         <code>deps: Task A>1</code> — to this WP's start+1<br>
         <code>deps: Task A@2>1</code> — both combined<br>
-        <code>deps: Task A!</code> — silent (no arrow)<br><br>
+        <code>deps: Task A!</code> — silent (no arrow)<br>
+        <code>deps: Task A "label"</code> — arrow tooltip<br><br>
         <strong>Row sharing</strong> (same visual row):<br>
         <code>- Review | 5-5 | row: Data Collection</code><br><br>
         <strong>Shorthand ID</strong> (for use in deps/row):<br>
         <code>- Name | 1-4 | id: AB</code><br>
         <code>- Other | 5-6 | deps: AB</code><br><br>
+        <strong>Short label</strong> (display name):<br>
+        <code>- Long Name | 1-4 | short: LN</code><br><br>
         <strong>Custom color:</strong><br>
         <code>- Name | 1-4 | color: #e05252</code><br><br>
-        <strong>Milestones:</strong> start = end → diamond<br>
+        <strong>Milestones:</strong> <code>- Name | 5</code> or <code>5-5</code> → diamond<br>
         <strong>Drag:</strong> edges resize, middle moves<br>
         <strong>Zoom:</strong> Ctrl+scroll (+ Shift for V)
       </div>
@@ -256,8 +261,10 @@
         <button class="btn btn-primary" onclick="exportMD();closeExportMenu()">MD</button>
       </div>
     </div>
-    <button class="btn btn-ghost" id="screenshotBtn" onclick="copyChartToClipboard()" title="Copy chart to clipboard" style="padding:4px 8px;font-size:11px">📋 Clipboard</button>
+    <button class="btn btn-ghost" id="screenshotBtn" onclick="copyChartToClipboard()" title="Copy chart to clipboard" style="padding:4px 8px;font-size:11px">📋 Copy</button>
     <button class="btn btn-ghost" id="shareBtn" onclick="shareAsLink()" title="Copy shareable link to clipboard">🔗 Share</button>
+    <input type="file" id="fileInput" accept=".md,.txt" style="display:none" onchange="loadFile(this)">
+    <button class="btn btn-ghost" onclick="document.getElementById('fileInput').click()" title="Load MD file">📂 Load</button>
     <button class="btn btn-ghost" id="refToggle" onclick="toggleRef()">Format ▴</button>
   </div>
 </aside>
@@ -451,18 +458,19 @@ function parseTask(line, li, errors, ci) {
   const parts = line.split('|').map(s => s.trim());
   if (parts.length < 2) { errors.push(`L${li+1}: need "Name | start-end"`); return null; }
   const name = parts[0];
-  const rng = parts[1].match(/^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)$/);
+  const rng = parts[1].match(/^(\d+(?:\.\d+)?)(?:\s*[-–]\s*(\d+(?:\.\d+)?))?$/);
   if (!rng) { errors.push(`L${li+1}: bad range`); return null; }
-  const s = parseFloat(rng[1]), e = parseFloat(rng[2]);
-  let deps=[], color=null, rowRef=null, id=null;
+  const s = parseFloat(rng[1]), e = rng[2] !== undefined ? parseFloat(rng[2]) : s;
+  let deps=[], color=null, rowRef=null, id=null, short=null;
   for (let i=2;i<parts.length;i++) {
     const p = parts[i];
     if (/^deps?\s*:/i.test(p)) deps = parseDeps(p.replace(/^deps?\s*:\s*/i,''));
     else if (/^colou?r\s*:/i.test(p)) color = p.replace(/^colou?r\s*:\s*/i,'').trim();
     else if (/^row\s*:/i.test(p)) rowRef = p.replace(/^row\s*:\s*/i,'').trim();
     else if (/^id\s*:/i.test(p)) id = p.replace(/^id\s*:\s*/i,'').trim();
+    else if (/^short\s*:/i.test(p)) short = p.replace(/^short\s*:\s*/i,'').trim();
   }
-  return { name, id, start:s, end:e, deps, color, rowRef, lineIdx:li, milestone:s===e, ci, gIdx:0 };
+  return { name, id, short, start:s, end:e, deps, color, rowRef, lineIdx:li, milestone:s===e, ci, gIdx:0 };
 }
 function parseDeps(s) {
   if (!s.trim()) return [];
@@ -471,13 +479,16 @@ function parseDeps(s) {
     let arrow=true;
     if (d.endsWith('!')) { arrow=false; d=d.slice(0,-1).trim(); }
     if (/\(no-?arrow\)/i.test(d)) { arrow=false; d=d.replace(/\(no-?arrow\)/i,'').trim(); }
+    // "custom tooltip"
+    let tooltip=null; const tq=d.match(/"([^"]*)"/);
+    if (tq) { tooltip=tq[1]; d=d.replace(/"[^"]*"/,'').trim(); }
     // >N  = target offset (relative to target WP start)
     let toOff=null; const te=d.match(/>\s*(\d+(?:\.\d+)?)\s*$/);
     if (te) { toOff=parseFloat(te[1]); d=d.replace(/>\s*[\d.]+\s*$/,'').trim(); }
     // @N  = source offset (relative to source WP start)
     let fromOff=null; const tm=d.match(/@(\d+(?:\.\d+)?)\s*$/);
     if (tm) { fromOff=parseFloat(tm[1]); d=d.replace(/@[\d.]+\s*$/,'').trim(); }
-    return d ? { name:d, fromOff, toOff, arrow } : null;
+    return d ? { name:d, fromOff, toOff, arrow, tooltip } : null;
   }).filter(Boolean);
 }
 
@@ -602,7 +613,7 @@ function renderChart(data) {
     if (!st.labelsOnBars && !r.shared) {
       const lb = el('text',{x:LW-24,y:y+ROW_H/2+1,'text-anchor':'end','dominant-baseline':'middle',
         'font-size':Math.max(9,13*Math.min(1,zV))*fs,fill:'#374151','font-family':"system-ui,sans-serif"});
-      lb.textContent = task.name; rowG.appendChild(lb);
+      lb.textContent = task.short != null ? task.short : task.name; rowG.appendChild(lb);
     }
     // Hide button (side mode: left gutter; bar mode: skip, use tooltip/hover)
     if (!r.shared && !st.labelsOnBars) {
@@ -619,10 +630,10 @@ function renderChart(data) {
         fill:color,stroke:'#fff','stroke-width':1.5,filter:'url(#bs)',class:'bar','data-fi':fi}));
       task._bx=cx-sz; task._bw=sz*2;
       // On-bar label for milestones: show to the right of diamond
-      if (st.labelsOnBars) {
+      if (st.labelsOnBars || r.shared) {
         const ml = el('text',{x:cx+sz+6, y:cy+1, 'dominant-baseline':'middle',
           'font-size':Math.max(9,11*Math.min(1,zV))*fs, class:'bar-label-dark'});
-        ml.textContent = task.name; rowG.appendChild(ml);
+        ml.textContent = task.short != null ? task.short : task.name; rowG.appendChild(ml);
       }
     } else {
       rowG.appendChild(el('rect',{x:barX,y:barY,width:barW,height:BAR_H,rx:5,fill:color,
@@ -637,8 +648,8 @@ function renderChart(data) {
         fill:'#fff',class:'bar-edge','data-fi':fi,'data-edge':'end'}));
       task._bx=barX; task._bw=barW;
 
-      // On-bar label
-      if (st.labelsOnBars) {
+      // On-bar label (also for shared-row items in side mode)
+      if (st.labelsOnBars || r.shared) {
         const fontSize = Math.max(9, Math.min(12, BAR_H * 0.45, 11) * Math.min(1, zV)) * fs;
         // Measure text to decide inside vs outside
         const bl = el('text',{
@@ -648,7 +659,7 @@ function renderChart(data) {
           'font-size': fontSize,
           class: 'bar-label'
         });
-        bl.textContent = task.name;
+        bl.textContent = task.short != null ? task.short : task.name;
         root.appendChild(bl);
         const textW = bl.getBBox().width;
         root.removeChild(bl);
@@ -670,24 +681,27 @@ function renderChart(data) {
     task._by=barY; task._cy=barY+BAR_H/2;
     root.appendChild(rowG);
 
-    // Arrows
+  });
+
+  // Draw arrows (second pass — all bar positions are now computed, so upward arrows work)
+  const tip = document.getElementById('tooltip');
+  data.allTasks.forEach(task => {
+    if (task._cy === undefined) return;
     task.deps.forEach(dep => {
       if (!dep.arrow) return;
       const si = taskMap[dep.name.toLowerCase()];
-      if (si===undefined) return;
+      if (si === undefined) return;
       const src = data.allTasks[si];
-      if (src._cy===undefined) return;
+      if (src._cy === undefined) return;
       const halfH = BAR_H/2;
-      // Source: offset → top/bottom edge; default → left/right edge at center
       const sx = dep.fromOff!==null ? LW+(src.start+dep.fromOff-minT)*colW : (src._bx+src._bw);
       const sy = dep.fromOff!==null ? (task._cy > src._cy ? src._cy+halfH : src._cy-halfH) : src._cy;
-      // Target: offset → top/bottom edge; default → left/right edge at center
       const tx = dep.toOff!==null ? LW+(task.start+dep.toOff-minT)*colW : task._bx;
       const ty = dep.toOff!==null ? (src._cy > task._cy ? task._cy+halfH : task._cy-halfH) : task._cy;
       if (tx===undefined) return;
       const dx=Math.abs(tx-sx), cv=st.arrowCurve; let path;
       if (st.arrowOrtho) {
-        const r = Math.min(8, Math.abs(ty-sy)/2, dx/2); // corner radius
+        const r = Math.min(8, Math.abs(ty-sy)/2, dx/2);
         if (Math.abs(sy-ty)<1) {
           path=`M${sx},${sy} L${tx},${ty}`;
         } else if (tx > sx+4) {
@@ -710,6 +724,15 @@ function renderChart(data) {
         path=`M${sx},${sy} L${sx+o},${sy} C${sx+o+bulge},${sy} ${sx+o+bulge},${m} ${(sx+tx)/2},${m} S${tx-o-bulge},${ty} ${tx-o},${ty} L${tx},${ty}`;
       }
       arrowG.appendChild(el('path',{d:path,fill:'none',stroke:ac,'stroke-width':st.arrowWidth,'marker-start':'url(#ad)','marker-end':'url(#ah)'}));
+      // Arrow tooltip hit area
+      const tipText = dep.tooltip
+        ? `<strong>${esc(dep.tooltip)}</strong><br><span style="color:#9ca3af">${esc(src.name)} \u2192 ${esc(task.name)}</span>`
+        : `<strong>${esc(src.name)} \u2192 ${esc(task.name)}</strong>`;
+      const hit = el('path',{d:path,fill:'none',stroke:'transparent','stroke-width':Math.max(12,st.arrowWidth+8),'pointer-events':'stroke',cursor:'pointer'});
+      arrowG.appendChild(hit);
+      hit.addEventListener('mouseenter', () => { tip.innerHTML=tipText; tip.classList.add('visible'); });
+      hit.addEventListener('mouseleave', () => tip.classList.remove('visible'));
+      hit.addEventListener('mousemove', e => { tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY-10)+'px'; });
     });
   });
   root.appendChild(arrowG);
@@ -1052,11 +1075,12 @@ function prepExportSvg() {
   s.textContent=SVG_EXPORT_STYLES;
   c.insertBefore(s,c.firstChild);
   c.querySelectorAll('.bar-edge,.row-hide-btn').forEach(e=>e.remove());
+  c.querySelectorAll('path[stroke="transparent"]').forEach(e=>e.remove());
   return c;
 }
 function exportMD() {
   const text=document.getElementById('input').value;
-  download(new Blob([text],{type:'text/markdown'}),'gantt-chart.md');
+  download(new Blob([text],{type:'text/markdown'}),exportName('md'));
 }
 function copyChartToClipboard() {
   const btn=document.getElementById('screenshotBtn'), orig=btn.textContent;
@@ -1080,7 +1104,7 @@ function copyChartToClipboard() {
 }
 function exportSVG() {
   const c=prepExportSvg();
-  download(new Blob([new XMLSerializer().serializeToString(c)],{type:'image/svg+xml'}),'gantt-chart.svg');
+  download(new Blob([new XMLSerializer().serializeToString(c)],{type:'image/svg+xml'}),exportName('svg'));
 }
 function exportPNG() {
   const c=prepExportSvg();
@@ -1089,7 +1113,7 @@ function exportPNG() {
     const cv=document.createElement('canvas');cv.width=img.width*sc;cv.height=img.height*sc;
     const ctx=cv.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
     ctx.scale(sc,sc);ctx.drawImage(img,0,0);
-    cv.toBlob(b=>download(b,'gantt-chart.png'),'image/png');
+    cv.toBlob(b=>download(b,exportName('png')),'image/png');
   };
   img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(d)));
 }
@@ -1135,9 +1159,14 @@ tip.innerHTML=h;tip.classList.add('visible')});
 b.addEventListener('mouseleave',()=>tip.classList.remove('visible'));
 b.addEventListener('mousemove',e=>{tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-10)+'px'})});
 <\/script></body></html>`;
-  download(new Blob([html],{type:'text/html'}),'gantt-chart.html');
+  download(new Blob([html],{type:'text/html'}),exportName('html'));
 }
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function exportName(ext){
+  const t=(document.getElementById('chartTitle').textContent||'').trim();
+  const slug=t.replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-|-$/g,'').toLowerCase();
+  return (slug||'gantt-chart')+'.'+ext;
+}
 function download(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
 
 // ============================== SHARE ==============================
@@ -1261,6 +1290,42 @@ function redo() {
 function updateUndoRedoBtns() {
   document.getElementById('undoBtn').disabled = !undoStack.length;
   document.getElementById('redoBtn').disabled = !redoStack.length;
+}
+
+// ============================== LOAD / DRAG-DROP ==============================
+function loadFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const ta = document.getElementById('input');
+    snapUndo();
+    ta.value = e.target.result;
+    lastSnap = ta.value;
+    render();
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+{
+  const eb = document.querySelector('.editor-body');
+  eb.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+  eb.addEventListener('dragenter', e => { e.preventDefault(); eb.classList.add('drag-over'); });
+  eb.addEventListener('dragleave', e => { if (!eb.contains(e.relatedTarget)) eb.classList.remove('drag-over'); });
+  eb.addEventListener('drop', e => {
+    e.preventDefault(); eb.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const ta = document.getElementById('input');
+      snapUndo();
+      ta.value = ev.target.result;
+      lastSnap = ta.value;
+      render();
+    };
+    reader.readAsText(file);
+  });
 }
 
 // ============================== INIT ==============================
